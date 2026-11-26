@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BlockRenderer } from "@/components/BlockRenderer";
+import { BlockRenderer, Photo, type BlockCtx } from "@/components/BlockRenderer";
 import { getPageBlocks, getPageImages, getSitePages, pagePath } from "@/lib/data";
 import type { HeroContent, Page, PageBlock, PageIntroContent, Site } from "@/lib/types";
 
@@ -52,6 +52,35 @@ export async function linkMaps(siteId: string) {
   return { pages, pageHrefById, locationHrefByName, thankYouHref: thankYou ? pagePath(thankYou) : undefined };
 }
 
+/** What photo belongs in each spot, by page type, so placeholders tell Bill exactly what to shoot. */
+function photoPlan(page: Page, site: Site): { hero?: string; bands: string[]; eyebrow?: string } {
+  const name = page.nav_label ?? "";
+  switch (page.page_type) {
+    case "home":
+      return {
+        hero: "Crew installing gutter guards on a local home",
+        bands: ["Before and after: clogged gutter vs. guard installed", "Crew hanging seamless gutters", "Finished job on a two-story home"],
+      };
+    case "service":
+      return { hero: `${name}: finished job, close-up`, bands: [`${name}: crew at work`, `${name}: before and after`], eyebrow: `${name} · ${site.city ?? ""}, ${site.state ?? ""}` };
+    case "location":
+      return { hero: `Finished gutters on a ${name} home`, bands: [`Job in ${name}: before and after`, `Crew on a ${name} street`], eyebrow: `Serving ${name}, ${site.state ?? ""}` };
+    case "services_hub":
+      return { hero: "Crew with truck and gutter machine", bands: [], eyebrow: "Our Services" };
+    case "locations_hub":
+      return { hero: "Map or photo of the service area", bands: [], eyebrow: "Service Areas" };
+    case "about":
+      return { hero: "Owner or crew photo", bands: ["Truck and equipment"], eyebrow: "About Us" };
+    case "contact":
+    case "estimate":
+      return { bands: [], eyebrow: "Free Estimates" };
+    default:
+      return { bands: [] };
+  }
+}
+
+const SECTION_TYPES = new Set(["body_section", "local_trust", "pricing_table", "differentiators", "process_steps", "services_grid", "service_area", "testimonials"]);
+
 export async function PageView({
   site,
   page,
@@ -64,6 +93,14 @@ export async function PageView({
 }) {
   const [blocks, images, maps] = await Promise.all([getPageBlocks(page.id), getPageImages(page.id), linkMaps(site.id)]);
   const headline = headlineOf(blocks, page.nav_label ?? site.business_name);
+  const placeholders = site.theme?.placeholders !== false;
+  const plan = photoPlan(page, site);
+  const estimate = maps.pages.find((p) => p.page_type === "estimate");
+  const parentHub = page.parent_page_id ? maps.pages.find((p) => p.id === page.parent_page_id) : undefined;
+  const crumbs =
+    page.page_type === "home"
+      ? undefined
+      : [{ label: "Home", href: "/" }, ...(parentHub ? [{ label: parentHub.nav_label ?? "", href: pagePath(parentHub) }] : []), { label: page.nav_label ?? headline }];
 
   const serviceLd =
     page.page_type === "service"
@@ -80,43 +117,100 @@ export async function PageView({
         }
       : null;
 
-  const ctaIndex = blocks.findIndex((b) => b.block_type === "final_cta");
-  // Skip the auto list when the page's own blocks already link every child (a services grid or a linked service-area block).
-  const blocksListChildren = blocks.some((b) => b.block_type === "services_grid" || b.block_type === "service_area");
-  const listAt =
-    childList && childList.length > 0 && !blocksListChildren ? (ctaIndex === -1 ? blocks.length : ctaIndex) : -1;
+  const base: Omit<BlockCtx, "alt"> = {
+    images,
+    pageHrefById: maps.pageHrefById,
+    locationHrefByName: maps.locationHrefByName,
+    thankYouHref: maps.thankYouHref,
+    estimateHref: estimate ? pagePath(estimate) : "/contact",
+    siteId: site.id,
+    phone: site.phone,
+    placeholders,
+    crumbs,
+    eyebrow: plan.eyebrow,
+    heroPhoto: plan.hero,
+  };
 
-  const render = (b: PageBlock) => (
-    <BlockRenderer
-      key={b.id}
-      block={b}
-      images={images}
-      pageHrefById={maps.pageHrefById}
-      locationHrefByName={maps.locationHrefByName}
-      siteId={site.id}
-      thankYouHref={maps.thankYouHref}
-    />
-  );
+  // Skip the auto child list when the page's own blocks already link every child.
+  const blocksListChildren = blocks.some((b) => b.block_type === "services_grid" || b.block_type === "service_area");
+  const showChildren = childList && childList.length > 0 && !blocksListChildren;
+
+  const out: React.ReactNode[] = [];
+  let alt = false; // alternate section backgrounds
+  let sectionsSinceBand = 0;
+  let band = 0;
+  const pushBand = () => {
+    if (band >= plan.bands.length) return;
+    const slot = `band-${band + 1}`;
+    const ph = Photo({ image: images[slot], label: plan.bands[band], slot, show: placeholders });
+    band++;
+    if (ph) out.push(<div key={slot} className="img-band"><div className="wrap">{ph}</div></div>);
+  };
+
+  blocks.forEach((b, i) => {
+    if (b.block_type === "final_cta" && showChildren) {
+      out.push(
+        <section key="children" className={`section${alt ? " section--alt" : ""}`}>
+          <div className="wrap">
+            <ul className="linklist">
+              {childList!.map((c) => (
+                <li key={c.id}>
+                  <Link href={pagePath(c)}>{c.nav_label ?? c.slug}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>,
+      );
+      alt = !alt;
+    }
+    const isSection = SECTION_TYPES.has(b.block_type) || b.block_type === "faq" || b.block_type === "related_links" || b.block_type === "contact_info";
+    out.push(<BlockRenderer key={b.id} block={b} ctx={{ ...base, alt: isSection ? alt : false }} />);
+    if (isSection) alt = !alt;
+    // Homepage: trust strip right under the hero.
+    if (i === 0 && page.page_type === "home" && site.theme?.trust?.length) {
+      out.push(
+        <div key="trust" className="trust">
+          <div className="wrap trust__grid">
+            {site.theme.trust.map((t, n) => (
+              <div key={n} className="trust__item">
+                <span className="trust__icon" aria-hidden="true">✓</span>
+                {t}
+              </div>
+            ))}
+          </div>
+        </div>,
+      );
+    }
+    if (SECTION_TYPES.has(b.block_type)) {
+      sectionsSinceBand++;
+      const next = blocks[i + 1];
+      if (sectionsSinceBand >= 3 && next && SECTION_TYPES.has(next.block_type)) {
+        pushBand();
+        sectionsSinceBand = 0;
+      }
+    }
+  });
+  if (showChildren && !blocks.some((b) => b.block_type === "final_cta")) {
+    out.push(
+      <section key="children" className="section">
+        <div className="wrap">
+          <ul className="linklist">
+            {childList!.map((c) => (
+              <li key={c.id}>
+                <Link href={pagePath(c)}>{c.nav_label ?? c.slug}</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>,
+    );
+  }
 
   return (
     <>
       {serviceLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceLd) }} />}
-      {blocks.slice(0, listAt === -1 ? blocks.length : listAt).map(render)}
-      {listAt !== -1 && (
-        <section className="py-12 px-6 max-w-4xl mx-auto">
-          {blocks.length === 0 && <h1 className="text-3xl font-bold text-slate-900 mb-6">{page.nav_label}</h1>}
-          <ul className="grid sm:grid-cols-2 gap-4">
-            {childList!.map((c) => (
-              <li key={c.id} className="border border-slate-200 rounded-lg p-4">
-                <Link href={pagePath(c)} className="font-medium text-slate-900 underline">
-                  {c.nav_label ?? c.slug}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {listAt !== -1 && blocks.slice(listAt).map(render)}
+      {out}
       {page.page_type === "contact" && <ContactDetails site={site} />}
     </>
   );
@@ -128,8 +222,9 @@ function ContactDetails({ site }: { site: Site }) {
     .join(" ");
   if (!site.phone && !site.email && !address) return null;
   return (
-    <section className="py-12 px-6 max-w-4xl mx-auto border-t border-slate-200">
-      <h2 className="text-2xl font-semibold text-slate-900 mb-4">Get in Touch</h2>
+    <section className="section section--alt">
+      <div className="wrap">
+      <h2 style={{ fontSize: 28, margin: "0 0 14px" }}>Get in Touch</h2>
       <dl className="space-y-2 text-slate-700">
         {site.phone && (
           <div>
@@ -158,6 +253,7 @@ function ContactDetails({ site }: { site: Site }) {
           </div>
         )}
       </dl>
+      </div>
     </section>
   );
 }

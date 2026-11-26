@@ -51,6 +51,26 @@ export interface Site {
   gsc_verification_tag: string | null;
   /** Live profile URLs (GBP, Facebook, Yelp...) for LocalBusiness.sameAs. */
   same_as: string[] | null;
+  /** Per-site look: colors (CSS variables), logo, and whether empty photo spots show a placeholder. */
+  theme: SiteTheme | null;
+}
+
+export interface SiteTheme {
+  primary?: string;
+  primary_dark?: string;
+  dark?: string;
+  accent?: string;
+  accent_dark?: string;
+  accent_ink?: string;
+  tint?: string;
+  alt?: string;
+  ink?: string;
+  /** Logo as base64 WebP, served at /logo.webp on the site's own domain. */
+  logo_b64?: string;
+  /** Show labeled "photo needed" boxes where photos are missing. Turn off before launch (REA: no placeholders live). */
+  placeholders?: boolean;
+  /** Short trust points shown under the homepage hero, e.g. "Prices posted online". */
+  trust?: string[];
 }
 
 export interface Redirect {
@@ -93,6 +113,8 @@ export interface PageImage {
 
 export interface HeroContent {
   headline: string;
+  eyebrow?: string;
+  checklist?: string[];
   subheadline?: string;
   intro?: string;
   cta_text?: string;
@@ -102,6 +124,7 @@ export interface HeroContent {
 
 export interface PageIntroContent {
   headline: string;
+  eyebrow?: string;
   intro?: string;
 }
 

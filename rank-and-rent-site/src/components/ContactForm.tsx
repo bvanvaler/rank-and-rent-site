@@ -49,51 +49,47 @@ export function ContactForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 max-w-lg">
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+    <form ref={formRef} onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+        <div className="field">
+          <label>Name</label>
           <input
             name="name"
             required
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+        <div className="field">
+          <label>Phone</label>
           <input
             name="phone"
             type="tel"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+      <div className="field">
+        <label>Email</label>
         <input
           name="email"
           type="email"
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
-      <p className="text-xs text-slate-400">Enter at least a phone number or an email.</p>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">
+      <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Enter at least a phone number or an email.</p>
+      <div className="field">
+        <label>
           What do you need help with?
         </label>
         <textarea
           name="message"
           rows={4}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
       {result?.error && <p className="text-sm text-red-600">{result.error}</p>}
       <button
         type="submit"
         disabled={isPending}
-        className="inline-flex items-center gap-2 rounded-md bg-[var(--color-ink)] text-white text-sm font-semibold uppercase tracking-wide px-6 py-3 hover:bg-black disabled:opacity-50"
+        className="btn btn--accent btn--lg" style={{ justifySelf: "start" }}
       >
-        {isPending ? "Sending..." : "Send"}
+        {isPending ? "Sending..." : "Request My Free Estimate →"}
       </button>
     </form>
   );
