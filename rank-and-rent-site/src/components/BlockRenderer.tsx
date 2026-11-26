@@ -19,217 +19,341 @@ import type {
 import { publicImageUrl } from "@/lib/supabase";
 import { ContactForm } from "@/components/ContactForm";
 
-/**
- * Renders every block_type the schema defines. The heading level is fixed
- * per block_type here, not left to content: this is what enforces
- * PROJECT.md's "H1 is always the headline, H2 is always a section header"
- * rule, since content editors can only change the text inside these
- * fields, never which tag wraps it.
- *
- * pageHrefById resolves the `link_page_id` values inside services_grid /
- * related_links content; locationHrefByName links service-area city names
- * to their pages.
- */
-export function BlockRenderer({
-  block,
-  images,
-  pageHrefById = {},
-  locationHrefByName = {},
-  siteId,
-  thankYouHref,
-}: {
-  block: PageBlock;
+/** Everything a block needs besides its own content. Built once per page in render.tsx. */
+export interface BlockCtx {
   images: Record<string, PageImage>;
-  pageHrefById?: Record<string, string>;
-  /** Lower-cased location nav_label -> href, so service_area city names link to their pages. */
-  locationHrefByName?: Record<string, string>;
-  /** Where the contact form sends visitors after a successful submit (REA Blueprint thank-you page), when one is published. */
+  pageHrefById: Record<string, string>;
+  /** Lower-cased location nav_label -> href, so service-area city names link to their pages. */
+  locationHrefByName: Record<string, string>;
   thankYouHref?: string;
-  /** Only used by the contact_info case, to let its form (when enabled) submit a real lead. */
-  siteId?: string;
-}) {
+  estimateHref: string;
+  siteId: string;
+  phone: string | null;
+  /** Show labeled "photo needed" boxes for empty photo spots (sites.theme.placeholders). */
+  placeholders: boolean;
+  /** Alternate section background (white / light gray), decided by the page. */
+  alt: boolean;
+  /** Inner-page hero extras: breadcrumbs, default eyebrow, whether to show a photo spot, its label. */
+  crumbs?: { label: string; href?: string }[];
+  eyebrow?: string;
+  heroPhoto?: string;
+}
+
+/**
+ * Renders every block_type. Heading levels are fixed per block type (H1 only
+ * in hero/page_intro, H2 for sections), so editors can change words but not
+ * the page outline.
+ */
+export function BlockRenderer({ block, ctx }: { block: PageBlock; ctx: BlockCtx }) {
+  const c = block.content as unknown;
   switch (block.block_type) {
     case "hero":
-      return <Hero content={block.content as unknown as HeroContent} images={images} />;
+      return <Hero content={c as HeroContent} ctx={ctx} />;
     case "page_intro":
-      return <PageIntro content={block.content as unknown as PageIntroContent} />;
+      return <InnerHero content={c as PageIntroContent} ctx={ctx} />;
     case "services_grid":
-      return (
-        <ServicesGrid
-          content={block.content as unknown as ServicesGridContent}
-          images={images}
-          pageHrefById={pageHrefById}
-        />
-      );
+      return <ServicesGrid content={c as ServicesGridContent} ctx={ctx} />;
     case "differentiators":
-      return <Differentiators content={block.content as unknown as DifferentiatorsContent} />;
+      return <Differentiators content={c as DifferentiatorsContent} ctx={ctx} />;
     case "service_area":
-      return <ServiceArea content={block.content as unknown as ServiceAreaContent} locationHrefByName={locationHrefByName} />;
+      return <ServiceArea content={c as ServiceAreaContent} ctx={ctx} />;
     case "process_steps":
-      return <ProcessSteps content={block.content as unknown as ProcessStepsContent} />;
+      return <ProcessSteps content={c as ProcessStepsContent} ctx={ctx} />;
     case "pricing_table":
-      return <PricingTable content={block.content as unknown as PricingTableContent} />;
+      return <PricingTable content={c as PricingTableContent} ctx={ctx} />;
     case "testimonials":
-      return <Testimonials content={block.content as unknown as TestimonialsContent} images={images} />;
+      return <Testimonials content={c as TestimonialsContent} ctx={ctx} />;
     case "faq":
-      return <Faq content={block.content as unknown as FaqContent} />;
+      return <Faq content={c as FaqContent} ctx={ctx} />;
     case "related_links":
-      return <RelatedLinks content={block.content as unknown as RelatedLinksContent} pageHrefById={pageHrefById} />;
+      return <RelatedLinks content={c as RelatedLinksContent} ctx={ctx} />;
     case "local_trust":
-      return <LocalTrust content={block.content as unknown as LocalTrustContent} />;
+      return <Prose heading={(c as LocalTrustContent).heading} body={(c as LocalTrustContent).body} ctx={ctx} />;
     case "contact_info":
-      return (
-        <ContactInfo
-          content={block.content as unknown as ContactInfoContent}
-          siteId={siteId}
-          pageId={block.page_id}
-          thankYouHref={thankYouHref}
-        />
-      );
+      return <ContactInfo content={c as ContactInfoContent} ctx={ctx} pageId={block.page_id} />;
     case "body_section":
-      return <BodySection content={block.content as unknown as BodySectionContent} />;
+      return <Prose heading={(c as BodySectionContent).heading} body={(c as BodySectionContent).body} ctx={ctx} />;
     case "final_cta":
-      return <FinalCta content={block.content as unknown as FinalCtaContent} />;
+      return <FinalCta content={c as FinalCtaContent} ctx={ctx} />;
     default:
       return null;
   }
 }
 
-const section = "py-12 px-6 max-w-4xl mx-auto";
+/* ---------------- shared bits ---------------- */
+
 const paragraphs = (text: string) =>
   text
     .split(/\n{2,}/)
     .filter(Boolean)
-    .map((p, i) => (
-      <p key={i} className="text-slate-700 leading-relaxed mb-4">
-        {p}
-      </p>
-    ));
+    .map((p, i) => <p key={i}>{p}</p>);
 
-function Heading({ children, center = false }: { children: React.ReactNode; center?: boolean }) {
+function Section({ ctx, children, id }: { ctx: BlockCtx; children: React.ReactNode; id?: string }) {
   return (
-    <div className={`mb-6 ${center ? "text-center" : ""}`}>
-      <span className={`block w-10 h-1 bg-[var(--color-brand)] mb-3 ${center ? "mx-auto" : ""}`} />
-      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">{children}</h2>
+    <section id={id} className={`section${ctx.alt ? " section--alt" : ""}`}>
+      <div className="wrap">{children}</div>
+    </section>
+  );
+}
+
+function Head({ children, center = false }: { children: React.ReactNode; center?: boolean }) {
+  return (
+    <div className={`section__head${center ? " section__head--center" : ""}`}>
+      <span className="rule" aria-hidden="true" />
+      <h2>{children}</h2>
     </div>
   );
 }
 
-function Hero({ content, images }: { content: HeroContent; images: Record<string, PageImage> }) {
-  const image = content.image_slot ? images[content.image_slot] : undefined;
+const tel = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 
-  if (!image) {
+function CallOrSecondary({ ctx, light = false, fallback }: { ctx: BlockCtx; light?: boolean; fallback?: { text: string; href: string } }) {
+  if (ctx.phone)
     return (
-      <section className="max-w-5xl mx-auto px-6 py-16">
-        <div className="max-w-3xl">
-          <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 mb-4">{content.headline}</h1>
-          {content.subheadline && <p className="text-xl text-slate-600 italic mb-4">{content.subheadline}</p>}
-          {content.intro && <p className="text-slate-600 max-w-xl mb-8">{content.intro}</p>}
-          {content.cta_text && content.cta_url && <CtaButton text={content.cta_text} href={content.cta_url} />}
-        </div>
-      </section>
+      <a href={tel(ctx.phone)} className={`btn btn--lg ${light ? "btn--ghost" : "btn--outline"}`}>
+        Call {ctx.phone}
+      </a>
     );
-  }
-
+  if (!fallback) return null;
   return (
-    <section
-      className="relative bg-cover bg-center"
-      style={{ backgroundImage: `url(${publicImageUrl(image.storage_path)})` }}
-    >
-      <div className="absolute inset-0 bg-gradient-to-r from-white via-white/85 to-white/10" />
-      <div className="relative max-w-5xl mx-auto px-6 py-20 sm:py-28">
-        <div className="max-w-xl bg-white/70 backdrop-blur-sm rounded-xl p-6 sm:p-8">
-          <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 mb-4">{content.headline}</h1>
-          {content.subheadline && <p className="text-xl text-slate-700 italic mb-4">{content.subheadline}</p>}
-          {content.intro && <p className="text-slate-700 mb-8">{content.intro}</p>}
-          {content.cta_text && content.cta_url && <CtaButton text={content.cta_text} href={content.cta_url} />}
+    <a href={fallback.href} className={`btn btn--lg ${light ? "btn--ghost" : "btn--outline"}`}>
+      {fallback.text}
+    </a>
+  );
+}
+
+/**
+ * A real photo when one is uploaded for this slot; otherwise, while the site
+ * is in build mode (theme.placeholders), a labeled box saying what photo
+ * belongs here. With placeholders off, an empty slot renders nothing.
+ */
+export function Photo({
+  image,
+  label,
+  slot,
+  show,
+  eager = false,
+}: {
+  image?: PageImage;
+  label: string;
+  slot: string;
+  show: boolean;
+  eager?: boolean;
+}) {
+  if (image)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={publicImageUrl(image.storage_path)}
+        alt={image.alt_text ?? label}
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+      />
+    );
+  if (!show) return null;
+  return (
+    <div className="ph" role="img" aria-label={`Photo needed: ${label}`}>
+      <div>
+        <div className="ph__icon" aria-hidden="true">
+          📷
         </div>
+        <div className="ph__label">Photo needed: {label}</div>
+        <div className="ph__slot">slot: {slot}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- heroes ---------------- */
+
+function Hero({ content, ctx }: { content: HeroContent; ctx: BlockCtx }) {
+  const slot = content.image_slot ?? "hero";
+  const media = Photo({ image: ctx.images[slot], label: ctx.heroPhoto ?? "Crew at work on a local home", slot, show: ctx.placeholders, eager: true });
+  return (
+    <section className="hero">
+      <div className="wrap hero__split" style={media ? undefined : { gridTemplateColumns: "1fr" }}>
+        <div>
+          {(content.eyebrow ?? ctx.eyebrow) && <p className="hero__eyebrow">{content.eyebrow ?? ctx.eyebrow}</p>}
+          <h1>{content.headline}</h1>
+          {content.subheadline && <p className="hero__sub">{content.subheadline}</p>}
+          {content.intro && <p className="hero__intro">{content.intro}</p>}
+          {content.checklist && content.checklist.length > 0 && (
+            <ul className="hero__checklist">
+              {content.checklist.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          )}
+          <div className="hero__cta">
+            <a href={content.cta_url ?? ctx.estimateHref} className="btn btn--accent btn--lg">
+              {content.cta_text ?? "Get a Free Estimate"} <span aria-hidden="true">→</span>
+            </a>
+            <CallOrSecondary ctx={ctx} fallback={{ text: "See Our Prices", href: "#prices" }} />
+          </div>
+        </div>
+        {media && <div className="hero__media">{media}</div>}
       </div>
     </section>
   );
 }
 
-/** Real photo when one's been uploaded to this slot; nothing otherwise (a "photo coming soon" box would count as a leftover placeholder under the REA pre-launch checklist). */
-function ImageBox({
-  image,
-  alt,
-  className = "",
-}: {
-  image: PageImage | undefined;
-  alt: string;
-  className?: string;
-  showLabel?: boolean;
-}) {
-  if (!image) return null;
+function InnerHero({ content, ctx }: { content: PageIntroContent; ctx: BlockCtx }) {
+  const media = ctx.heroPhoto
+    ? Photo({ image: ctx.images.hero, label: ctx.heroPhoto, slot: "hero", show: ctx.placeholders, eager: true })
+    : null;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={publicImageUrl(image.storage_path)}
-      alt={image.alt_text ?? alt}
-      className={`object-cover bg-slate-100 ${className}`}
-      loading="lazy"
-      decoding="async"
-    />
-  );
-}
-
-function PageIntro({ content }: { content: PageIntroContent }) {
-  return (
-    <section className={section}>
-      <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">{content.headline}</h1>
-      {content.intro && paragraphs(content.intro)}
+    <section className="hero hero--inner">
+      <div className="wrap hero__split" style={media ? undefined : { gridTemplateColumns: "1fr" }}>
+        <div>
+          {ctx.crumbs && ctx.crumbs.length > 1 && (
+            <nav className="crumbs" aria-label="Breadcrumb">
+              {ctx.crumbs.map((c, i) => (
+                <span key={i}>
+                  {i > 0 && " › "}
+                  {c.href ? <a href={c.href}>{c.label}</a> : c.label}
+                </span>
+              ))}
+            </nav>
+          )}
+          {(content.eyebrow ?? ctx.eyebrow) && <p className="hero__eyebrow">{content.eyebrow ?? ctx.eyebrow}</p>}
+          <h1>{content.headline}</h1>
+          {content.intro && <div className="hero__intro">{paragraphs(content.intro)}</div>}
+          {ctx.eyebrow !== undefined && (
+            <div className="hero__cta">
+              <a href={ctx.estimateHref} className="btn btn--accent btn--lg">
+                Get a Free Estimate <span aria-hidden="true">→</span>
+              </a>
+              <CallOrSecondary ctx={ctx} />
+            </div>
+          )}
+        </div>
+        {media && <div className="hero__media">{media}</div>}
+      </div>
     </section>
   );
 }
 
-function BodySection({ content }: { content: BodySectionContent }) {
+/* ---------------- content blocks ---------------- */
+
+function Prose({ heading, body, ctx }: { heading?: string; body: string; ctx: BlockCtx }) {
   return (
-    <section className={section}>
-      <h2 className="text-2xl font-semibold text-slate-900 mb-3">{content.heading}</h2>
-      {paragraphs(content.body)}
-    </section>
+    <Section ctx={ctx}>
+      {heading && <Head>{heading}</Head>}
+      <div className="prose">{paragraphs(body)}</div>
+    </Section>
   );
 }
 
-function PricingTable({ content }: { content: PricingTableContent }) {
+function ServicesGrid({ content, ctx }: { content: ServicesGridContent; ctx: BlockCtx }) {
   return (
-    <section className={section}>
-      {content.heading && <Heading>{content.heading}</Heading>}
-      <div className="grid md:grid-cols-2 gap-8 items-start">
-        {(content.intro || (content.cta_text && content.cta_url)) && (
-          <div className="bg-slate-100 rounded-lg p-6">
+    <Section ctx={ctx}>
+      <Head>Our Services</Head>
+      {content.intro && <p className="lead" style={{ marginTop: -6, marginBottom: 24 }}>{content.intro}</p>}
+      <div className="grid grid--3">
+        {content.items?.map((item, i) => {
+          const slot = item.image_slot ?? `service-${i + 1}`;
+          const href = item.link_page_id ? ctx.pageHrefById[item.link_page_id] : undefined;
+          return (
+            <div key={i} className="svc-card">
+              <Photo image={ctx.images[slot]} label={`${item.title} job photo`} slot={slot} show={ctx.placeholders} />
+              <div className="svc-card__body">
+                <h3>{item.title}</h3>
+                {item.blurb && <p>{item.blurb}</p>}
+                {href && (
+                  <a href={href} className="more">
+                    Learn more →
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+const ICONS = ["💲", "📏", "🏠", "🛠️", "🍂", "💧", "🛡️", "📋", "⭐"];
+
+function Differentiators({ content, ctx }: { content: DifferentiatorsContent; ctx: BlockCtx }) {
+  return (
+    <Section ctx={ctx}>
+      {content.heading && <Head>{content.heading}</Head>}
+      <div className="grid grid--3">
+        {content.items?.map((item, i) => (
+          <div key={i} className="card">
+            <div className="card__icon" aria-hidden="true">
+              {ICONS[i % ICONS.length]}
+            </div>
+            <h3>{item.heading}</h3>
+            <p>{item.body}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function ProcessSteps({ content, ctx }: { content: ProcessStepsContent; ctx: BlockCtx }) {
+  const n = content.items?.length ?? 0;
+  return (
+    <Section ctx={ctx}>
+      {content.heading && <Head>{content.heading}</Head>}
+      <div className={`grid ${n === 4 || n === 2 ? "grid--2" : "grid--3"}`} style={{ rowGap: 40, marginTop: 30 }}>
+        {content.items?.map((item, i) => (
+          <div key={i} className="card step">
+            <span className="step__num">{i + 1}</span>
+            <h3>{item.heading}</h3>
+            <p>{item.body}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function PricingTable({ content, ctx }: { content: PricingTableContent; ctx: BlockCtx }) {
+  return (
+    <Section ctx={ctx} id="prices">
+      {content.heading && <Head>{content.heading}</Head>}
+      <div className="price">
+        {(content.intro || content.cta_url) && (
+          <div className="price__callout">
             {content.intro && paragraphs(content.intro)}
-            {content.cta_text && content.cta_url && <CtaButton text={content.cta_text} href={content.cta_url} />}
+            {content.cta_text && content.cta_url && (
+              <a href={content.cta_url} className="btn btn--accent">
+                {content.cta_text} →
+              </a>
+            )}
           </div>
         )}
         {content.rows?.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-900">
-                  <th className="py-3 px-4 font-semibold text-white text-sm">Service</th>
-                  <th className="py-3 px-4 font-semibold text-white text-sm">Price</th>
+          <table className="ptable">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {content.rows.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.label}</td>
+                  <td className="amt">
+                    {String(row.price_low) === String(row.price_high) ? `$${row.price_low}` : `$${row.price_low}–$${row.price_high}`}{" "}
+                    <span style={{ fontWeight: 500, fontSize: 14, color: "var(--muted)" }}>{row.unit}</span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {content.rows.map((row, i) => (
-                  <tr key={i} className={i % 2 === 1 ? "bg-slate-50" : "bg-white"}>
-                    <td className="py-2.5 px-4 text-slate-700">{row.label}</td>
-                    <td className="py-2.5 px-4 text-slate-700 tabular-nums">
-                      {String(row.price_low) === String(row.price_high) ? `$${row.price_low}` : `$${row.price_low}–$${row.price_high}`} {row.unit}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
-    </section>
+    </Section>
   );
 }
 
-function Faq({ content }: { content: FaqContent }) {
+function Faq({ content, ctx }: { content: FaqContent; ctx: BlockCtx }) {
   if (!content.items?.length) return null;
   const ld = {
     "@context": "https://schema.org",
@@ -241,272 +365,103 @@ function Faq({ content }: { content: FaqContent }) {
     })),
   };
   return (
-    <section className={section}>
+    <Section ctx={ctx}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />
-      {content.heading && <Heading center>{content.heading}</Heading>}
-      <div className="divide-y divide-slate-200">
+      {content.heading && <Head center>{content.heading}</Head>}
+      <div className="faq">
         {content.items.map((item, i) => (
-          <div key={i} className="py-5 first:pt-0">
-            <h3 className="text-lg font-semibold text-slate-900 mb-1.5">{item.question}</h3>
-            <p className="text-slate-700 leading-relaxed">{item.answer}</p>
-          </div>
+          <details key={i} open={i === 0}>
+            <summary>
+              <h3 style={{ display: "inline", font: "inherit", margin: 0 }}>{item.question}</h3>
+            </summary>
+            <p>{item.answer}</p>
+          </details>
         ))}
       </div>
-    </section>
+    </Section>
   );
 }
 
-function FinalCta({ content }: { content: FinalCtaContent }) {
+function ServiceArea({ content, ctx }: { content: ServiceAreaContent; ctx: BlockCtx }) {
   return (
-    <section className={`${section} text-center py-16`}>
-      {content.heading && <h2 className="text-3xl font-bold text-slate-900 mb-3">{content.heading}</h2>}
-      {content.body && <p className="text-slate-600 mb-6 max-w-xl mx-auto">{content.body}</p>}
-      <CtaButton text={content.cta_text} href={content.cta_url} />
-    </section>
+    <Section ctx={ctx}>
+      {content.heading && <Head>{content.heading}</Head>}
+      {content.regions?.map((region, i) => (
+        <div key={i} className="region">
+          <h3>{region.region_name}</h3>
+          <ul className="linklist">
+            {region.cities.map((city) => {
+              const href = ctx.locationHrefByName[city.toLowerCase()];
+              return <li key={city}>{href ? <a href={href}>{city}</a> : <span>{city}</span>}</li>;
+            })}
+          </ul>
+        </div>
+      ))}
+    </Section>
   );
 }
 
-function StarIcon() {
+function RelatedLinks({ content, ctx }: { content: RelatedLinksContent; ctx: BlockCtx }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="var(--color-brand)" aria-hidden="true">
-      <path d="M10 0l2.59 6.34L19.5 7.64l-5.02 4.6L15.9 19 10 15.27 4.1 19l1.42-6.76-5.02-4.6 6.91-1.3L10 0z" />
-    </svg>
-  );
-}
-
-function Differentiators({ content }: { content: DifferentiatorsContent }) {
-  return (
-    <section className={section}>
-      {content.heading && <Heading>{content.heading}</Heading>}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-10">
-        {content.items?.map((item, i) => (
-          <div key={i}>
-            <div className="mb-2">
-              <StarIcon />
-            </div>
-            <h3 className="font-semibold text-slate-900 mb-1">{item.heading}</h3>
-            <p className="text-slate-600">{item.body}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ProcessSteps({ content }: { content: ProcessStepsContent }) {
-  return (
-    <section className={section}>
-      {content.heading && <Heading>{content.heading}</Heading>}
-      <ol className="space-y-6">
-        {content.items?.map((item, i) => (
-          <li key={i} className="flex gap-4">
-            <span className="flex-none w-8 h-8 rounded-full bg-[var(--color-ink)] text-white text-sm font-semibold flex items-center justify-center">
-              {i + 1}
-            </span>
-            <div>
-              <h3 className="font-semibold text-slate-900 mb-1">{item.heading}</h3>
-              <p className="text-slate-700">{item.body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function ServiceArea({
-  content,
-  locationHrefByName,
-}: {
-  content: ServiceAreaContent;
-  locationHrefByName: Record<string, string>;
-}) {
-  return (
-    <section className={section}>
-      {content.heading && <Heading center>{content.heading}</Heading>}
-      <div className="grid sm:grid-cols-2 gap-6">
-        {content.regions?.map((region, i) => (
-          <div key={i}>
-            <h3 className="font-semibold text-slate-900 mb-2">{region.region_name}</h3>
-            <ul className="text-slate-700 space-y-1">
-              {region.cities.map((city) => (
-                <li key={city}>
-                  {locationHrefByName[city.toLowerCase()] ? (
-                    <a href={locationHrefByName[city.toLowerCase()]} className="underline hover:text-slate-900">
-                      {city}
-                    </a>
-                  ) : (
-                    city
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ServicesGrid({
-  content,
-  images,
-  pageHrefById,
-}: {
-  content: ServicesGridContent;
-  images: Record<string, PageImage>;
-  pageHrefById: Record<string, string>;
-}) {
-  return (
-    <section className={section}>
-      {content.intro && <p className="text-slate-700 mb-6">{content.intro}</p>}
-      <div className="grid sm:grid-cols-2 gap-6">
+    <Section ctx={ctx}>
+      {content.heading && <Head>{content.heading}</Head>}
+      <ul className="linklist">
         {content.items?.map((item, i) => {
-          const image = item.image_slot ? images[item.image_slot] : undefined;
-          const href = item.link_page_id ? pageHrefById[item.link_page_id] : undefined;
-          return (
-            <div key={i}>
-              <ImageBox image={image} alt={item.title} className="w-full h-44 rounded-lg mb-3" />
-              <h3 className="font-semibold text-slate-900 mb-1">{item.title}</h3>
-              {item.blurb && <p className="text-slate-600 text-sm mb-2">{item.blurb}</p>}
-              {href ? (
-                <a
-                  href={href}
-                  className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-ink)] hover:text-[var(--color-brand-dark)]"
-                >
-                  Learn More <span aria-hidden="true">&rarr;</span>
-                </a>
-              ) : (
-                item.link_page_id && <span className="text-sm text-slate-400">Learn More</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-const TESTIMONIAL_CARD_COLORS = ["bg-[var(--color-brand-soft)]", "bg-teal-50", "bg-slate-100"];
-
-function Testimonials({
-  content,
-  images,
-}: {
-  content: TestimonialsContent;
-  images: Record<string, PageImage>;
-}) {
-  return (
-    <section className={section}>
-      {content.heading && <Heading center>{content.heading}</Heading>}
-      <div className="grid sm:grid-cols-3 gap-6 pt-6">
-        {content.items?.map((item, i) => {
-          const image = item.image_slot ? images[item.image_slot] : undefined;
-          return (
-            <blockquote
-              key={i}
-              className={`relative rounded-xl p-5 pt-9 text-center ${TESTIMONIAL_CARD_COLORS[i % TESTIMONIAL_CARD_COLORS.length]}`}
-            >
-              <ImageBox
-                image={image}
-                alt={item.name}
-                className="w-14 h-14 rounded-full absolute -top-7 left-1/2 -translate-x-1/2 border-4 border-white"
-              />
-              <p className="text-slate-700 italic mb-3">&ldquo;{item.quote}&rdquo;</p>
-              <footer className="text-sm font-semibold text-slate-900">
-                {item.name}
-                {item.title && <span className="block font-normal text-slate-500">{item.title}</span>}
-              </footer>
-            </blockquote>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function RelatedLinks({
-  content,
-  pageHrefById,
-}: {
-  content: RelatedLinksContent;
-  pageHrefById: Record<string, string>;
-}) {
-  return (
-    <section className={section}>
-      {content.heading && <h2 className="text-2xl font-semibold text-slate-900 mb-4">{content.heading}</h2>}
-      <ul className="space-y-2">
-        {content.items?.map((item, i) => {
-          const href = item.href ?? (item.link_page_id ? pageHrefById[item.link_page_id] : undefined);
-          return (
-            <li key={i}>
-              {href ? (
-                <a href={href} className="text-slate-900 underline">
-                  {item.label}
-                </a>
-              ) : (
-                <span className="text-slate-400">{item.label}</span>
-              )}
-            </li>
-          );
+          const href = item.href ?? (item.link_page_id ? ctx.pageHrefById[item.link_page_id] : undefined);
+          return <li key={i}>{href ? <a href={href}>{item.label}</a> : <span>{item.label}</span>}</li>;
         })}
       </ul>
-    </section>
+    </Section>
   );
 }
 
-function LocalTrust({ content }: { content: LocalTrustContent }) {
+function Testimonials({ content, ctx }: { content: TestimonialsContent; ctx: BlockCtx }) {
   return (
-    <section className={section}>
-      {content.heading && <h2 className="text-2xl font-semibold text-slate-900 mb-3">{content.heading}</h2>}
-      {paragraphs(content.body)}
-    </section>
+    <Section ctx={ctx}>
+      {content.heading && <Head center>{content.heading}</Head>}
+      <div className="grid grid--3">
+        {content.items?.map((item, i) => (
+          <blockquote key={i} className="card" style={{ margin: 0 }}>
+            <p style={{ fontStyle: "italic", color: "var(--ink)" }}>&ldquo;{item.quote}&rdquo;</p>
+            <footer style={{ marginTop: 12, fontWeight: 700 }}>
+              {item.name}
+              {item.title && <span style={{ display: "block", fontWeight: 400, color: "var(--muted)" }}>{item.title}</span>}
+            </footer>
+          </blockquote>
+        ))}
+      </div>
+    </Section>
   );
 }
 
-function ContactInfo({
-  content,
-  siteId,
-  pageId,
-  thankYouHref,
-}: {
-  content: ContactInfoContent;
-  siteId?: string;
-  pageId: string;
-  thankYouHref?: string;
-}) {
+function ContactInfo({ content, ctx, pageId }: { content: ContactInfoContent; ctx: BlockCtx; pageId: string }) {
   return (
-    <section className={section}>
-      {content.heading && <h2 className="text-2xl font-semibold text-slate-900 mb-3">{content.heading}</h2>}
-      {content.hours && <p className="text-slate-700 mb-4">{content.hours}</p>}
+    <Section ctx={ctx}>
+      <div className="form-card">
+        {content.heading && <h2 style={{ fontSize: 26, margin: "0 0 6px" }}>{content.heading}</h2>}
+        {content.hours && <p style={{ color: "var(--muted)", margin: "0 0 14px" }}>{content.hours}</p>}
+        {content.form_enabled && <ContactForm siteId={ctx.siteId} pageId={pageId} redirectTo={ctx.thankYouHref} />}
+      </div>
       {content.map_embed_url && (
-        <iframe
-          src={content.map_embed_url}
-          className="w-full h-64 rounded-lg border border-slate-200 mb-4"
-          loading="lazy"
-        />
+        <iframe src={content.map_embed_url} className="w-full h-64 rounded-lg border border-slate-200 mt-6" loading="lazy" />
       )}
-      {content.form_enabled && siteId && <ContactForm siteId={siteId} pageId={pageId} redirectTo={thankYouHref} />}
-      {content.form_enabled && !siteId && (
-        <p className="text-slate-400 text-sm">
-          (Contact form couldn&apos;t load -- for now, use the phone number / email in the footer.)
-        </p>
-      )}
-    </section>
+    </Section>
   );
 }
 
-function CtaButton({ text, href, inverted = false }: { text: string; href: string; inverted?: boolean }) {
+function FinalCta({ content, ctx }: { content: FinalCtaContent; ctx: BlockCtx }) {
   return (
-    <a
-      href={href}
-      className={
-        inverted
-          ? "inline-flex items-center gap-2 rounded-md bg-white text-[var(--color-ink)] text-sm font-semibold uppercase tracking-wide px-6 py-3 hover:bg-slate-100"
-          : "inline-flex items-center gap-2 rounded-md bg-[var(--color-ink)] text-white text-sm font-semibold uppercase tracking-wide px-6 py-3 hover:bg-black"
-      }
-    >
-      {text} <span aria-hidden="true">&rarr;</span>
-    </a>
+    <section className="cta-band">
+      <div className="wrap">
+        {content.heading && <h2>{content.heading}</h2>}
+        {content.body && <p>{content.body}</p>}
+        <div className="cta-band__btns">
+          <a href={content.cta_url} className="btn btn--accent btn--lg">
+            {content.cta_text} <span aria-hidden="true">→</span>
+          </a>
+          <CallOrSecondary ctx={ctx} light />
+        </div>
+      </div>
+    </section>
   );
 }
