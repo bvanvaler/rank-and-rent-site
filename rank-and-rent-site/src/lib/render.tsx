@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BlockRenderer, Photo, type BlockCtx } from "@/components/BlockRenderer";
 import { getPageBlocks, getPageImages, getSitePages, pagePath } from "@/lib/data";
 import type { HeroContent, Page, PageBlock, PageImage, PageIntroContent, Site } from "@/lib/types";
+import { bandRule, layoutOf } from "@/lib/layout";
 
 /**
  * Shared page plumbing for every route (home, hubs, singletons, flat
@@ -95,6 +96,7 @@ export async function PageView({
   const headline = headlineOf(blocks, page.nav_label ?? site.business_name);
   const placeholders = site.theme?.placeholders !== false;
   const plan = photoPlan(page, site);
+  const bandEvery = bandRule(layoutOf(site.theme), page.page_type); // 0 = no wide photos
   const estimate = maps.pages.find((p) => p.page_type === "estimate");
   const parentHub = page.parent_page_id ? maps.pages.find((p) => p.id === page.parent_page_id) : undefined;
   const crumbs =
@@ -185,7 +187,7 @@ export async function PageView({
     if (SECTION_TYPES.has(b.block_type)) {
       sectionsSinceBand++;
       const next = blocks[i + 1];
-      if (sectionsSinceBand >= 3 && next && SECTION_TYPES.has(next.block_type)) {
+      if (bandEvery > 0 && sectionsSinceBand >= bandEvery && next && SECTION_TYPES.has(next.block_type)) {
         pushBand();
         sectionsSinceBand = 0;
       }
