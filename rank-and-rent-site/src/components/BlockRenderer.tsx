@@ -82,11 +82,34 @@ export function BlockRenderer({ block, ctx }: { block: PageBlock; ctx: BlockCtx 
 
 /* ---------------- shared bits ---------------- */
 
+/** Plain text with [words](/path) links removed (for FAQ schema). */
+const stripLinks = (text: string) => text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, "$1");
+
+const TEXT_LINK: React.CSSProperties = { color: "var(--primary)", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3, textDecorationThickness: 1 };
+
+/** Text with [words](/path) links turned into real links. Only site paths and http(s) URLs are linked. */
+export function inline(text: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const href = m[2];
+    if (href.startsWith("/")) out.push(<a key={m.index} href={href} style={TEXT_LINK}>{m[1]}</a>);
+    else if (/^https?:\/\//.test(href)) out.push(<a key={m.index} href={href} rel="noopener" target="_blank" style={TEXT_LINK}>{m[1]}</a>);
+    else out.push(m[1]);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 const paragraphs = (text: string) =>
   text
     .split(/\n{2,}/)
     .filter(Boolean)
-    .map((p, i) => <p key={i}>{p}</p>);
+    .map((p, i) => <p key={i}>{inline(p)}</p>);
 
 function Section({ ctx, children, id }: { ctx: BlockCtx; children: React.ReactNode; id?: string }) {
   return (
@@ -286,7 +309,7 @@ function Differentiators({ content, ctx }: { content: DifferentiatorsContent; ct
               {ICONS[i % ICONS.length]}
             </div>
             <h3>{item.heading}</h3>
-            <p>{item.body}</p>
+            <p>{inline(item.body)}</p>
           </div>
         ))}
       </div>
@@ -304,7 +327,7 @@ function ProcessSteps({ content, ctx }: { content: ProcessStepsContent; ctx: Blo
           <div key={i} className="card step">
             <span className="step__num">{i + 1}</span>
             <h3>{item.heading}</h3>
-            <p>{item.body}</p>
+            <p>{inline(item.body)}</p>
           </div>
         ))}
       </div>
@@ -361,7 +384,7 @@ function Faq({ content, ctx }: { content: FaqContent; ctx: BlockCtx }) {
     mainEntity: content.items.map((i) => ({
       "@type": "Question",
       name: i.question,
-      acceptedAnswer: { "@type": "Answer", text: i.answer },
+      acceptedAnswer: { "@type": "Answer", text: stripLinks(i.answer) },
     })),
   };
   return (
@@ -374,7 +397,7 @@ function Faq({ content, ctx }: { content: FaqContent; ctx: BlockCtx }) {
             <summary>
               <h3 style={{ display: "inline", font: "inherit", margin: 0 }}>{item.question}</h3>
             </summary>
-            <p>{item.answer}</p>
+            <p>{inline(item.answer)}</p>
           </details>
         ))}
       </div>

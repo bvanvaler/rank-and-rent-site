@@ -4,6 +4,8 @@ import { BlockRenderer, Photo, type BlockCtx } from "@/components/BlockRenderer"
 import { getPageBlocks, getPageImages, getSitePages, pagePath } from "@/lib/data";
 import type { HeroContent, Page, PageBlock, PageImage, PageIntroContent, Site } from "@/lib/types";
 import { bandRule, layoutOf } from "@/lib/layout";
+import { addAutoLinks, buildLinkTerms } from "@/lib/links";
+import type { ServiceAreaRegion } from "@/lib/types";
 
 /**
  * Shared page plumbing for every route (home, hubs, singletons, flat
@@ -92,7 +94,10 @@ export async function PageView({
   /** Hub pages: published children, rendered as a link list just before the closing CTA. */
   childList?: Page[];
 }) {
-  const [blocks, images, maps] = await Promise.all([getPageBlocks(page.id), getPageImages(page.id), linkMaps(site.id)]);
+  const [rawBlocks, images, maps] = await Promise.all([getPageBlocks(page.id), getPageImages(page.id), linkMaps(site.id)]);
+  // In-text links (first mention of each service, town and the business name), then the link-list sections.
+  const linked = addAutoLinks(rawBlocks, buildLinkTerms(site, maps.pages), pagePath(page));
+  const blocks = await withAreaLinks(linked, page, site, maps);
   const headline = headlineOf(blocks, page.nav_label ?? site.business_name);
   const placeholders = site.theme?.placeholders !== false;
   const plan = photoPlan(page, site);
@@ -217,6 +222,76 @@ export async function PageView({
       <PhotoCredits images={images} />
     </>
   );
+}
+
+/** Descriptive anchor for links back to the homepage, e.g. "Hoosier Gutter Guys: Gutter Guards in Noblesville". */
+function homeLabel(site: Site, pages: Page[]): string {
+  const main = pages.find((p) => p.page_type === "service" && p.nav_label)?.nav_label;
+  return main && site.city ? `${site.business_name}: ${main} in ${site.city}` : site.business_name;
+}
+
+/** The site's towns grouped by region, from the Service Areas page (or the homepage). */
+async function serviceRegions(pages: Page[]): Promise<ServiceAreaRegion[]> {
+  for (const type of ["locations_hub", "home"] as const) {
+    const p = pages.find((x) => x.page_type === type);
+    if (!p) continue;
+    const area = (await getPageBlocks(p.id)).find((b) => b.block_type === "service_area");
+    const regions = (area?.content as { regions?: ServiceAreaRegion[] } | undefined)?.regions;
+    if (regions?.length) return regions;
+  }
+  return [];
+}
+
+/**
+ * REA page templates: town pages end with "Nearby Areas We Serve" (the other
+ * towns in the same region), and service pages list every town they serve.
+ * Added just before the closing call-to-action.
+ */
+async function withAreaLinks(blocks: PageBlock[], page: Page, site: Site, maps: Awaited<ReturnType<typeof linkMaps>>): Promise<PageBlock[]> {
+  if (page.page_type !== "location" && page.page_type !== "service") return blocks;
+  const regions = await serviceRegions(maps.pages);
+  let extra: PageBlock | null = null;
+
+  if (page.page_type === "location") {
+    const me = (page.nav_label ?? "").toLowerCase();
+    const region = regions.find((r) => r.cities.some((c) => c.toLowerCase() === me));
+    let towns = (region?.cities ?? []).filter((c) => c.toLowerCase() !== me && maps.locationHrefByName[c.toLowerCase()]);
+    if (towns.length < 3) {
+      // No region match: fall back to the towns next to this one alphabetically.
+      const all = maps.pages.filter((p) => p.page_type === "location" && p.nav_label).map((p) => p.nav_label!);
+      const i = all.findIndex((c) => c.toLowerCase() === me);
+      towns = all.filter((_, j) => j !== i && Math.abs(j - i) <= 4);
+    }
+    if (towns.length) {
+      extra = {
+        id: `auto-nearby-${page.id}`,
+        page_id: page.id,
+        block_type: "related_links",
+        position: 0,
+        content: {
+          heading: "Nearby Areas We Serve",
+          items: [
+            ...towns.map((c) => ({ label: c, href: maps.locationHrefByName[c.toLowerCase()] })),
+            { label: "All Service Areas", href: "/locations" },
+            // A descriptive link back to the homepage, the site's main ranking target.
+            { label: homeLabel(site, maps.pages), href: "/" },
+          ],
+        },
+      } as unknown as PageBlock;
+    }
+  } else if (regions.length && !blocks.some((b) => b.block_type === "service_area")) {
+    extra = {
+      id: `auto-areas-${page.id}`,
+      page_id: page.id,
+      block_type: "service_area",
+      position: 0,
+      content: { heading: `${page.nav_label ?? "Our Services"}: Towns We Serve`, regions },
+    } as unknown as PageBlock;
+  }
+
+  if (!extra) return blocks;
+  const at = blocks.findIndex((b) => b.block_type === "final_cta");
+  return at === -1 ? [...blocks, extra] : [...blocks.slice(0, at), extra, ...blocks.slice(at)];
 }
 
 /** Attribution for licensed photos used on this page (required by their Creative Commons licenses). */
