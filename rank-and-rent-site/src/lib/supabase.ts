@@ -1,12 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Public read-only client, anon key only.
+ * Public client, anon key only -- used for reads everywhere except one
+ * deliberate exception (submitLead in src/lib/actions.ts, the contact-form
+ * submission), which relies on the `leads` table's anon-INSERT-only RLS
+ * policy rather than a service-role key.
  *
- * There is no service-role client anywhere in this app on purpose: the
- * public site never writes, and RLS (001_initial_schema.sql) already
- * restricts anon reads to published pages on active sites. Letting RLS do
- * that filtering means the queries here don't need their own
+ * There is no service-role client anywhere in this app on purpose. RLS
+ * (001_initial_schema.sql) already restricts anon reads to published pages
+ * on active sites, so the queries here don't need their own
  * status = 'published' checks scattered throughout -- one less place to
  * get that condition wrong.
  */
@@ -25,7 +27,7 @@ export function createPublicClient() {
   });
 }
 
+/** Served through next.config's /media rewrite, so image URLs stay on each site's own domain. */
 export function publicImageUrl(storagePath: string): string {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${url}/storage/v1/object/public/page-images/${storagePath}`;
+  return `/media/${storagePath}`;
 }

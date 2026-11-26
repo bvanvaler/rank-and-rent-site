@@ -1,120 +1,130 @@
-import { headers } from "next/headers";
+import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase";
-import type { Page, PageBlock, PageImage, PageType, Site } from "@/lib/types";
+import type { Page, PageBlock, PageImage, PageType, Redirect, Site } from "@/lib/types";
 
 /**
- * Resolves the site to render from the incoming request's Host header --
- * this is the multi-tenant mechanism PROJECT.md describes: one codebase,
- * many custom domains, the `sites.domain` column decides which content
- * renders. Falls back to DEV_DEFAULT_DOMAIN when the host doesn't match any
- * site (e.g. the *.vercel.app preview URL before a real domain is attached).
+ * Every read here goes through Next's data cache (CMS_TTL seconds, tag
+ * "cms"). Pages themselves are static ISR entries per domain (see
+ * proxy.ts), so a visitor gets pre-built HTML from the CDN and never
+ * waits on the database. The admin can flush everything immediately via
+ * /api/revalidate after a publish.
  */
-export async function getCurrentSite(): Promise<Site | null> {
-  const headerList = await headers();
-  const host = (headerList.get("host") ?? "").split(":")[0]; // strip port for local dev
+const CMS_TTL = 300;
+const cached = <A extends unknown[], R>(key: string, fn: (...args: A) => Promise<R>) =>
+  unstable_cache(fn, [key], { revalidate: CMS_TTL, tags: ["cms"] });
 
-  const supabase = createPublicClient();
-
-  const { data, error } = await supabase
-    .from("sites")
-    .select("*")
-    .eq("domain", host)
-    .maybeSingle();
+const siteByDomain = cached("site-by-domain", async (domain: string): Promise<Site | null> => {
+  const { data, error } = await createPublicClient().from("sites").select("*").eq("domain", domain).maybeSingle();
   if (error) throw error;
-  if (data) return data as Site;
+  return (data as Site) ?? null;
+});
 
-  const fallbackDomain = process.env.DEV_DEFAULT_DOMAIN;
-  if (!fallbackDomain || fallbackDomain === host) return null;
-
-  const { data: fallback, error: fallbackError } = await supabase
-    .from("sites")
-    .select("*")
-    .eq("domain", fallbackDomain)
-    .maybeSingle();
-  if (fallbackError) throw fallbackError;
-  return (fallback as Site) ?? null;
+/** The site for a domain (proxy.ts has already stripped "www." and resolved previews). */
+export async function getSiteByDomain(domain: string): Promise<Site | null> {
+  return siteByDomain(decodeURIComponent(domain).toLowerCase());
 }
 
-export async function getPageByTypeAndSlug(
-  siteId: string,
-  pageType: PageType,
-  slug: string
-): Promise<Page | null> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
+/** Domains of all active sites, for pre-building at deploy time. */
+export const listActiveDomains = cached("active-domains", async (): Promise<string[]> => {
+  const { data, error } = await createPublicClient().from("sites").select("domain").eq("status", "active");
+  if (error) throw error;
+  return ((data ?? []) as { domain: string }[]).map((d) => d.domain);
+});
+
+/** All of a site's pages (RLS returns published pages on active sites only). One query, cached, reused by nav, footer, sitemap and link maps. */
+export const getSitePages = cached("site-pages", async (siteId: string): Promise<Page[]> => {
+  const { data, error } = await createPublicClient()
     .from("pages")
     .select("*")
     .eq("site_id", siteId)
-    .eq("page_type", pageType)
-    .eq("slug", slug)
-    .maybeSingle();
+    .order("nav_order", { ascending: true });
   if (error) throw error;
-  return data as Page | null;
+  return ((data ?? []) as Page[]).filter((p) => p.status === "published");
+});
+
+export async function getPageByTypes(siteId: string, slug: string, types: PageType[]): Promise<Page | null> {
+  const pages = await getSitePages(siteId);
+  return pages.find((p) => p.slug === slug && types.includes(p.page_type)) ?? null;
 }
 
-export async function getHubPage(
-  siteId: string,
-  pageType: "services_hub" | "locations_hub"
-): Promise<Page | null> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
-    .from("pages")
-    .select("*")
-    .eq("site_id", siteId)
-    .eq("page_type", pageType)
-    .maybeSingle();
-  if (error) throw error;
-  return data as Page | null;
+/** The published page whose public URL is `path` (e.g. "/about", "/gutters-carmel-in"). */
+export async function getPageByPath(siteId: string, path: string): Promise<Page | null> {
+  const pages = await getSitePages(siteId);
+  return pages.find((p) => p.page_type !== "home" && pagePath(p) === path) ?? null;
 }
 
-export async function getChildPages(parentPageId: string): Promise<Page[]> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
+export async function getFirstPageOfType(siteId: string, type: PageType): Promise<Page | null> {
+  const pages = await getSitePages(siteId);
+  return pages.find((p) => p.page_type === type) ?? null;
+}
+
+// Kept for existing callers.
+export const getHubPage = (siteId: string, t: "services_hub" | "locations_hub") => getFirstPageOfType(siteId, t);
+export const getSingletonPage = (siteId: string, t: "home" | "about" | "contact") => getFirstPageOfType(siteId, t);
+export async function getChildPages(parentPageId: string, siteId?: string): Promise<Page[]> {
+  if (siteId) return (await getSitePages(siteId)).filter((p) => p.parent_page_id === parentPageId);
+  const { data, error } = await createPublicClient()
     .from("pages")
     .select("*")
     .eq("parent_page_id", parentPageId)
     .order("nav_order", { ascending: true });
   if (error) throw error;
-  return data as Page[];
+  return ((data ?? []) as Page[]).filter((p) => p.status === "published");
 }
 
-/** Used for the global nav -- one page per singleton type (about, contact, home). */
-export async function getSingletonPage(
-  siteId: string,
-  pageType: "home" | "about" | "contact"
-): Promise<Page | null> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
-    .from("pages")
-    .select("*")
-    .eq("site_id", siteId)
-    .eq("page_type", pageType)
-    .maybeSingle();
-  if (error) throw error;
-  return data as Page | null;
-}
-
-export async function getPageBlocks(pageId: string): Promise<PageBlock[]> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
+export const getPageBlocks = cached("page-blocks", async (pageId: string): Promise<PageBlock[]> => {
+  const { data, error } = await createPublicClient()
     .from("page_blocks")
     .select("*")
     .eq("page_id", pageId)
     .order("position", { ascending: true });
   if (error) throw error;
-  return data as PageBlock[];
-}
+  return (data ?? []) as PageBlock[];
+});
 
-export async function getPageImages(pageId: string): Promise<Record<string, PageImage>> {
-  const supabase = createPublicClient();
-  const { data, error } = await supabase
+export const getPageImages = cached("page-images", async (pageId: string): Promise<Record<string, PageImage>> => {
+  const { data, error } = await createPublicClient()
     .from("page_images")
     .select("id, slot_key, storage_path, alt_text")
     .eq("page_id", pageId);
   if (error) throw error;
   const bySlot: Record<string, PageImage> = {};
-  for (const img of (data ?? []) as PageImage[]) {
-    bySlot[img.slot_key] = img;
-  }
+  for (const img of (data ?? []) as PageImage[]) bySlot[img.slot_key] = img;
   return bySlot;
+});
+
+/** 301 lookup for a site's old URLs (e.g. after a WordPress migration). Path is compared without a trailing slash. */
+export const getRedirect = cached("redirect", async (siteId: string, path: string): Promise<Redirect | null> => {
+  const clean = "/" + path.replace(/^\/+|\/+$/g, "");
+  const { data, error } = await createPublicClient()
+    .from("redirects")
+    .select("from_path, to_path, permanent")
+    .eq("site_id", siteId)
+    .eq("from_path", clean)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Redirect) ?? null;
+});
+
+/** Public URL path for a page, honoring the fixed routes for home and the singleton/hub types. */
+export function pagePath(page: Pick<Page, "page_type" | "slug">): string {
+  switch (page.page_type) {
+    case "home":
+      return "/";
+    case "services_hub":
+      return "/services";
+    case "locations_hub":
+      return "/locations";
+    case "about":
+      return "/about";
+    case "contact":
+      return "/contact";
+    default:
+      return `/${page.slug}`;
+  }
+}
+
+// Kept for older callers.
+export async function getPageByTypeAndSlug(siteId: string, type: PageType, slug: string): Promise<Page | null> {
+  return getPageByTypes(siteId, slug, [type]);
 }
