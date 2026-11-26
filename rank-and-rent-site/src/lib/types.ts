@@ -8,7 +8,12 @@ export type PageType =
   | "locations_hub"
   | "location"
   | "about"
-  | "contact";
+  | "contact"
+  | "faq"
+  | "estimate"
+  | "thank_you"
+  | "careers"
+  | "legal";
 
 export type BlockType =
   | "hero"
@@ -42,6 +47,16 @@ export interface Site {
   longitude: number | null;
   service_area_summary: string | null;
   tagline: string | null;
+  ga_measurement_id: string | null;
+  gsc_verification_tag: string | null;
+  /** Live profile URLs (GBP, Facebook, Yelp...) for LocalBusiness.sameAs. */
+  same_as: string[] | null;
+}
+
+export interface Redirect {
+  from_path: string;
+  to_path: string;
+  permanent: boolean;
 }
 
 export interface Page {

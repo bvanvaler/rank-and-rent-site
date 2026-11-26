@@ -17,30 +17,36 @@ import type {
   TestimonialsContent,
 } from "@/lib/types";
 import { publicImageUrl } from "@/lib/supabase";
+import { ContactForm } from "@/components/ContactForm";
 
 /**
- * Renders every block_type the schema defines (see the content contracts in
- * 001_initial_schema.sql), not just the ones a service page uses -- so this
- * keeps working unmodified once the admin grows location-page and homepage
- * screens. The heading level is fixed per block_type here, not left to
- * content: this is what actually enforces PROJECT.md's "H1 is always the
- * headline, H2 is always a section header" rule, since content editors can
- * only ever change the text inside these fields, never which tag wraps it.
+ * Renders every block_type the schema defines. The heading level is fixed
+ * per block_type here, not left to content: this is what enforces
+ * PROJECT.md's "H1 is always the headline, H2 is always a section header"
+ * rule, since content editors can only change the text inside these
+ * fields, never which tag wraps it.
  *
- * pageHrefById resolves the `link_page_id` values that live inside
- * services_grid/related_links content -- pass a { [pageId]: href } map when
- * rendering a page that uses those block types. Without it, those items
- * degrade to plain text instead of links (no service or location page uses
- * either block type yet, so the pages built so far never need the map).
+ * pageHrefById resolves the `link_page_id` values inside services_grid /
+ * related_links content; locationHrefByName links service-area city names
+ * to their pages.
  */
 export function BlockRenderer({
   block,
   images,
   pageHrefById = {},
+  locationHrefByName = {},
+  siteId,
+  thankYouHref,
 }: {
   block: PageBlock;
   images: Record<string, PageImage>;
   pageHrefById?: Record<string, string>;
+  /** Lower-cased location nav_label -> href, so service_area city names link to their pages. */
+  locationHrefByName?: Record<string, string>;
+  /** Where the contact form sends visitors after a successful submit (REA Blueprint thank-you page), when one is published. */
+  thankYouHref?: string;
+  /** Only used by the contact_info case, to let its form (when enabled) submit a real lead. */
+  siteId?: string;
 }) {
   switch (block.block_type) {
     case "hero":
@@ -58,7 +64,7 @@ export function BlockRenderer({
     case "differentiators":
       return <Differentiators content={block.content as unknown as DifferentiatorsContent} />;
     case "service_area":
-      return <ServiceArea content={block.content as unknown as ServiceAreaContent} />;
+      return <ServiceArea content={block.content as unknown as ServiceAreaContent} locationHrefByName={locationHrefByName} />;
     case "process_steps":
       return <ProcessSteps content={block.content as unknown as ProcessStepsContent} />;
     case "pricing_table":
@@ -72,7 +78,14 @@ export function BlockRenderer({
     case "local_trust":
       return <LocalTrust content={block.content as unknown as LocalTrustContent} />;
     case "contact_info":
-      return <ContactInfo content={block.content as unknown as ContactInfoContent} />;
+      return (
+        <ContactInfo
+          content={block.content as unknown as ContactInfoContent}
+          siteId={siteId}
+          pageId={block.page_id}
+          thankYouHref={thankYouHref}
+        />
+      );
     case "body_section":
       return <BodySection content={block.content as unknown as BodySectionContent} />;
     case "final_cta":
@@ -93,15 +106,6 @@ const paragraphs = (text: string) =>
       </p>
     ));
 
-/**
- * Small brand mark used above every block_type that carries a `heading`
- * field -- a short gold rule instead of a full-bleed color band, since
- * several blocks with headings (differentiators, service_area,
- * pricing_table, testimonials, faq) can stack on the same page, and a full
- * band on each would get heavy fast. Keeps the reference site's gold+bold
- * heading language without cloning its exact section-divider copy, which
- * doesn't exist in this schema.
- */
 function Heading({ children, center = false }: { children: React.ReactNode; center?: boolean }) {
   return (
     <div className={`mb-6 ${center ? "text-center" : ""}`}>
@@ -115,17 +119,14 @@ function Hero({ content, images }: { content: HeroContent; images: Record<string
   const image = content.image_slot ? images[content.image_slot] : undefined;
 
   if (!image) {
-    // No photo uploaded yet -- fall back to the plain two-column layout so
-    // the hero never looks broken pre-photos (see ImageBox below).
     return (
-      <section className="max-w-5xl mx-auto px-6 py-16 grid md:grid-cols-2 gap-10 items-center">
-        <div>
+      <section className="max-w-5xl mx-auto px-6 py-16">
+        <div className="max-w-3xl">
           <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 mb-4">{content.headline}</h1>
           {content.subheadline && <p className="text-xl text-slate-600 italic mb-4">{content.subheadline}</p>}
           {content.intro && <p className="text-slate-600 max-w-xl mb-8">{content.intro}</p>}
           {content.cta_text && content.cta_url && <CtaButton text={content.cta_text} href={content.cta_url} />}
         </div>
-        <ImageBox image={image} alt={content.headline} className="aspect-[4/3] w-full rounded-xl" />
       </section>
     );
   }
@@ -148,46 +149,27 @@ function Hero({ content, images }: { content: HeroContent; images: Record<string
   );
 }
 
-/**
- * Renders a real photo when one's been uploaded to this slot, or a clearly-
- * labeled placeholder box when it hasn't -- so an empty image slot reads as
- * "not filled in yet" rather than looking like something's broken. Real
- * photos go in via the admin's Image Manager (Supabase Storage); this
- * component doesn't know or care which slot names are "real" vs. still
- * empty, it just renders whatever it's given.
- */
+/** Real photo when one's been uploaded to this slot; nothing otherwise (a "photo coming soon" box would count as a leftover placeholder under the REA pre-launch checklist). */
 function ImageBox({
   image,
   alt,
   className = "",
-  showLabel = true,
 }: {
   image: PageImage | undefined;
   alt: string;
   className?: string;
   showLabel?: boolean;
 }) {
-  if (image) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={publicImageUrl(image.storage_path)}
-        alt={image.alt_text ?? alt}
-        className={`object-cover bg-slate-100 ${className}`}
-      />
-    );
-  }
+  if (!image) return null;
   return (
-    <div
-      className={`flex flex-col items-center justify-center gap-1 bg-slate-100 border border-dashed border-slate-300 text-slate-400 ${className}`}
-    >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
-        <path d="M21 15l-5-5L5 21" />
-      </svg>
-      {showLabel && <span className="text-xs">Photo coming soon</span>}
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={publicImageUrl(image.storage_path)}
+      alt={image.alt_text ?? alt}
+      className={`object-cover bg-slate-100 ${className}`}
+      loading="lazy"
+      decoding="async"
+    />
   );
 }
 
@@ -226,7 +208,7 @@ function PricingTable({ content }: { content: PricingTableContent }) {
               <thead>
                 <tr className="bg-slate-900">
                   <th className="py-3 px-4 font-semibold text-white text-sm">Service</th>
-                  <th className="py-3 px-4 font-semibold text-white text-sm">Typical Range</th>
+                  <th className="py-3 px-4 font-semibold text-white text-sm">Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -234,7 +216,7 @@ function PricingTable({ content }: { content: PricingTableContent }) {
                   <tr key={i} className={i % 2 === 1 ? "bg-slate-50" : "bg-white"}>
                     <td className="py-2.5 px-4 text-slate-700">{row.label}</td>
                     <td className="py-2.5 px-4 text-slate-700 tabular-nums">
-                      ${row.price_low}&ndash;${row.price_high} {row.unit}
+                      {String(row.price_low) === String(row.price_high) ? `$${row.price_low}` : `$${row.price_low}–$${row.price_high}`} {row.unit}
                     </td>
                   </tr>
                 ))}
@@ -249,8 +231,18 @@ function PricingTable({ content }: { content: PricingTableContent }) {
 
 function Faq({ content }: { content: FaqContent }) {
   if (!content.items?.length) return null;
+  const ld = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: content.items.map((i) => ({
+      "@type": "Question",
+      name: i.question,
+      acceptedAnswer: { "@type": "Answer", text: i.answer },
+    })),
+  };
   return (
     <section className={section}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />
       {content.heading && <Heading center>{content.heading}</Heading>}
       <div className="divide-y divide-slate-200">
         {content.items.map((item, i) => (
@@ -322,7 +314,13 @@ function ProcessSteps({ content }: { content: ProcessStepsContent }) {
   );
 }
 
-function ServiceArea({ content }: { content: ServiceAreaContent }) {
+function ServiceArea({
+  content,
+  locationHrefByName,
+}: {
+  content: ServiceAreaContent;
+  locationHrefByName: Record<string, string>;
+}) {
   return (
     <section className={section}>
       {content.heading && <Heading center>{content.heading}</Heading>}
@@ -332,7 +330,15 @@ function ServiceArea({ content }: { content: ServiceAreaContent }) {
             <h3 className="font-semibold text-slate-900 mb-2">{region.region_name}</h3>
             <ul className="text-slate-700 space-y-1">
               {region.cities.map((city) => (
-                <li key={city}>{city}</li>
+                <li key={city}>
+                  {locationHrefByName[city.toLowerCase()] ? (
+                    <a href={locationHrefByName[city.toLowerCase()]} className="underline hover:text-slate-900">
+                      {city}
+                    </a>
+                  ) : (
+                    city
+                  )}
+                </li>
               ))}
             </ul>
           </div>
@@ -405,7 +411,6 @@ function Testimonials({
                 image={image}
                 alt={item.name}
                 className="w-14 h-14 rounded-full absolute -top-7 left-1/2 -translate-x-1/2 border-4 border-white"
-                showLabel={false}
               />
               <p className="text-slate-700 italic mb-3">&ldquo;{item.quote}&rdquo;</p>
               <footer className="text-sm font-semibold text-slate-900">
@@ -459,7 +464,17 @@ function LocalTrust({ content }: { content: LocalTrustContent }) {
   );
 }
 
-function ContactInfo({ content }: { content: ContactInfoContent }) {
+function ContactInfo({
+  content,
+  siteId,
+  pageId,
+  thankYouHref,
+}: {
+  content: ContactInfoContent;
+  siteId?: string;
+  pageId: string;
+  thankYouHref?: string;
+}) {
   return (
     <section className={section}>
       {content.heading && <h2 className="text-2xl font-semibold text-slate-900 mb-3">{content.heading}</h2>}
@@ -471,9 +486,10 @@ function ContactInfo({ content }: { content: ContactInfoContent }) {
           loading="lazy"
         />
       )}
-      {content.form_enabled && (
+      {content.form_enabled && siteId && <ContactForm siteId={siteId} pageId={pageId} redirectTo={thankYouHref} />}
+      {content.form_enabled && !siteId && (
         <p className="text-slate-400 text-sm">
-          (Contact form not built yet -- for now, use the phone number / email in the footer.)
+          (Contact form couldn&apos;t load -- for now, use the phone number / email in the footer.)
         </p>
       )}
     </section>
