@@ -80,8 +80,8 @@ function linkText(text: string, terms: LinkTerm[], used: Set<string>, budget: { 
   for (const t of terms) {
     if (budget.left <= 0) break;
     if (used.has(t.href)) continue;
-    // only search the parts of the text that aren't already links
-    const parts = out.split(/(\[[^\]]+\]\([^)\s]+\))/);
+    // only search the parts of the text that aren't already links or table rows
+    const parts = out.split(/(\[[^\]]+\]\([^)\s]+\)|^\|.*$)/m);
     let done = false;
     for (let i = 0; i < parts.length && !done; i++) {
       if (i % 2 === 1) continue;

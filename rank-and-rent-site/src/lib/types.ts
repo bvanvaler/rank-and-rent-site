@@ -15,7 +15,8 @@ export type PageType =
   | "careers"
   | "legal"
   | "blog_hub"
-  | "post";
+  | "post"
+  | "guide";
 
 export type BlockType =
   | "hero"

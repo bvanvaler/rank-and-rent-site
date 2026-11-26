@@ -87,6 +87,8 @@ function photoPlan(page: Page, site: Site): { hero?: string; bands: string[]; ey
       return { bands: [], eyebrow: "Tips & Local Answers" };
     case "post":
       return { hero: `Photo for this article: ${name}`, bands: [], eyebrow: postDate(page) ? `Article · ${postDate(page)}` : "Article" };
+    case "guide":
+      return { hero: `Photo for this guide: ${name}`, bands: [], eyebrow: "Guide" };
     default:
       return { bands: [] };
   }
@@ -120,10 +122,10 @@ export async function PageView({
       : [{ label: "Home", href: "/" }, ...(parentHub ? [{ label: parentHub.nav_label ?? "", href: pagePath(parentHub) }] : []), { label: page.nav_label ?? headline }];
 
   const postLd =
-    page.page_type === "post"
+    page.page_type === "post" || page.page_type === "guide"
       ? {
           "@context": "https://schema.org",
-          "@type": "BlogPosting",
+          "@type": page.page_type === "guide" ? "Article" : "BlogPosting",
           headline: headline,
           description: page.meta_description ?? undefined,
           datePublished: page.published_at ?? undefined,
@@ -278,6 +280,7 @@ async function withAreaLinks(blocks: PageBlock[], page: Page, site: Site, maps: 
   if (page.page_type === "home") return insertBeforeCta(blocks, latestPosts(page, maps.pages, 6, "Tips & Local Answers"));
   // Posts link to about 8 other posts (REA's article guidance).
   if (page.page_type === "post") return insertBeforeCta(blocks, latestPosts(page, maps.pages, 8, "More Tips & Local Answers"));
+  if (page.page_type === "guide") return insertBeforeCta(blocks, latestPosts(page, maps.pages, 8, "Related Tips & Answers"));
   if (page.page_type !== "location" && page.page_type !== "service") return blocks;
   const regions = await serviceRegions(maps.pages);
   let extra: PageBlock | null = null;
