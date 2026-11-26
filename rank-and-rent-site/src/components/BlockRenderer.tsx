@@ -105,11 +105,36 @@ export function inline(text: string): React.ReactNode[] {
   return out;
 }
 
+/** A paragraph made only of "| a | b |" lines is a table: first line is the header, "|---|" lines are skipped. */
+const isTable = (p: string) => p.trim().split("\n").every((l) => l.trim().startsWith("|"));
+function TextTable({ text }: { text: string }) {
+  const rows = text
+    .trim()
+    .split("\n")
+    .map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()))
+    .filter((cells) => !cells.every((c) => /^:?-{2,}:?$/.test(c)));
+  const [head, ...body] = rows;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="ptable">
+        <thead>
+          <tr>{head.map((c, i) => <th key={i}>{inline(c)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {body.map((r, i) => (
+            <tr key={i}>{r.map((c, j) => <td key={j}>{inline(c)}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const paragraphs = (text: string) =>
   text
     .split(/\n{2,}/)
     .filter(Boolean)
-    .map((p, i) => <p key={i}>{inline(p)}</p>);
+    .map((p, i) => (isTable(p) ? <TextTable key={i} text={p} /> : <p key={i}>{inline(p)}</p>));
 
 function Section({ ctx, children, id }: { ctx: BlockCtx; children: React.ReactNode; id?: string }) {
   return (

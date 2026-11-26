@@ -103,6 +103,8 @@ export default async function SiteLayout({ children, params }: LayoutProps) {
   const contactPage = first("contact");
   const faqPage = first("faq");
   const estimatePage = first("estimate");
+  const blogHub = first("blog_hub");
+  const guides = pages.filter((p) => p.page_type === "guide");
   const servicePages = servicesHub ? pages.filter((p) => p.parent_page_id === servicesHub.id) : [];
   const locationPages = locationsHub ? pages.filter((p) => p.parent_page_id === locationsHub.id) : [];
   const ctaHref = estimatePage ? pagePath(estimatePage) : "/contact";
@@ -160,6 +162,20 @@ export default async function SiteLayout({ children, params }: LayoutProps) {
           )}
         </li>
       )}
+      {guides.map((g) => (
+        <li key={g.id}>
+          <Link href={pagePath(g)} className="nav__link">
+            {g.nav_label ?? g.slug}
+          </Link>
+        </li>
+      ))}
+      {blogHub && (
+        <li>
+          <Link href={pagePath(blogHub)} className="nav__link">
+            Blog
+          </Link>
+        </li>
+      )}
       {aboutPage && (
         <li>
           <Link href="/about" className="nav__link">
@@ -195,6 +211,12 @@ export default async function SiteLayout({ children, params }: LayoutProps) {
           </Link>
         ))}
         {locationsHub && <Link href="/locations">Service Areas</Link>}
+        {guides.map((g) => (
+          <Link key={g.id} href={pagePath(g)}>
+            {g.nav_label ?? g.slug}
+          </Link>
+        ))}
+        {blogHub && <Link href={pagePath(blogHub)}>Blog</Link>}
         {aboutPage && <Link href="/about">About</Link>}
         {faqPage && <Link href={pagePath(faqPage)}>FAQ</Link>}
         {contactPage && <Link href="/contact">Contact</Link>}
@@ -350,7 +372,7 @@ function SiteFooter({
   locationPages: Page[];
   hasLogo: boolean;
 }) {
-  const companyTypes: Page["page_type"][] = ["about", "faq", "estimate", "careers", "contact"];
+  const companyTypes: Page["page_type"][] = ["guide", "blog_hub", "about", "faq", "estimate", "careers", "contact"];
   const company = companyTypes.flatMap((t) => pages.filter((p) => p.page_type === t));
   const legal = pages.filter((p) => p.page_type === "legal");
   const address = [site.street_address, [site.city, site.state].filter(Boolean).join(", "), site.postal_code].filter(Boolean).join(" ");
