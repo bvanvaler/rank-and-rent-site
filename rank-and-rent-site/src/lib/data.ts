@@ -117,6 +117,8 @@ export function pagePath(page: Pick<Page, "page_type" | "slug">): string {
       return "/locations";
     case "about":
       return "/about";
+    case "blog_hub":
+      return "/blog";
     case "contact":
       return "/contact";
     default:

@@ -13,7 +13,9 @@ export type PageType =
   | "estimate"
   | "thank_you"
   | "careers"
-  | "legal";
+  | "legal"
+  | "blog_hub"
+  | "post";
 
 export type BlockType =
   | "hero"
@@ -90,6 +92,8 @@ export interface Page {
   meta_title: string | null;
   meta_description: string | null;
   status: "draft" | "published";
+  /** Posts: publish date. A future date keeps the page hidden until then (enforced by RLS). */
+  published_at?: string | null;
 }
 
 export interface PageBlock {

@@ -55,6 +55,12 @@ export async function linkMaps(siteId: string) {
   return { pages, pageHrefById, locationHrefByName, thankYouHref: thankYou ? pagePath(thankYou) : undefined };
 }
 
+/** "November 28, 2026" for a post's publish date. */
+function postDate(page: Page): string | null {
+  if (!page.published_at) return null;
+  return new Date(page.published_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "America/New_York" });
+}
+
 /** What photo belongs in each spot, by page type, so placeholders tell Bill exactly what to shoot. */
 function photoPlan(page: Page, site: Site): { hero?: string; bands: string[]; eyebrow?: string } {
   const name = page.nav_label ?? "";
@@ -77,6 +83,10 @@ function photoPlan(page: Page, site: Site): { hero?: string; bands: string[]; ey
     case "contact":
     case "estimate":
       return { bands: [], eyebrow: "Free Estimates" };
+    case "blog_hub":
+      return { bands: [], eyebrow: "Tips & Local Answers" };
+    case "post":
+      return { hero: `Photo for this article: ${name}`, bands: [], eyebrow: postDate(page) ? `Article · ${postDate(page)}` : "Article" };
     default:
       return { bands: [] };
   }
@@ -108,6 +118,22 @@ export async function PageView({
     page.page_type === "home"
       ? undefined
       : [{ label: "Home", href: "/" }, ...(parentHub ? [{ label: parentHub.nav_label ?? "", href: pagePath(parentHub) }] : []), { label: page.nav_label ?? headline }];
+
+  const postLd =
+    page.page_type === "post"
+      ? {
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          headline: headline,
+          description: page.meta_description ?? undefined,
+          datePublished: page.published_at ?? undefined,
+          dateModified: page.published_at ?? undefined,
+          url: `${siteOrigin(site)}${pagePath(page)}`,
+          mainEntityOfPage: `${siteOrigin(site)}${pagePath(page)}`,
+          author: { "@type": "Organization", name: site.business_name, url: siteOrigin(site) },
+          publisher: { "@type": "Organization", "@id": `${siteOrigin(site)}/#business`, name: site.business_name },
+        }
+      : null;
 
   const serviceLd =
     page.page_type === "service"
@@ -217,6 +243,7 @@ export async function PageView({
   return (
     <>
       {serviceLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceLd) }} />}
+      {postLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(postLd) }} />}
       {out}
       {page.page_type === "contact" && <ContactDetails site={site} />}
       <PhotoCredits images={images} />
@@ -248,6 +275,9 @@ async function serviceRegions(pages: Page[]): Promise<ServiceAreaRegion[]> {
  * Added just before the closing call-to-action.
  */
 async function withAreaLinks(blocks: PageBlock[], page: Page, site: Site, maps: Awaited<ReturnType<typeof linkMaps>>): Promise<PageBlock[]> {
+  if (page.page_type === "home") return insertBeforeCta(blocks, latestPosts(page, maps.pages, 6, "Tips & Local Answers"));
+  // Posts link to about 8 other posts (REA's article guidance).
+  if (page.page_type === "post") return insertBeforeCta(blocks, latestPosts(page, maps.pages, 8, "More Tips & Local Answers"));
   if (page.page_type !== "location" && page.page_type !== "service") return blocks;
   const regions = await serviceRegions(maps.pages);
   let extra: PageBlock | null = null;
@@ -289,9 +319,33 @@ async function withAreaLinks(blocks: PageBlock[], page: Page, site: Site, maps: 
     } as unknown as PageBlock;
   }
 
+  return insertBeforeCta(blocks, extra);
+}
+
+function insertBeforeCta(blocks: PageBlock[], extra: PageBlock | null): PageBlock[] {
   if (!extra) return blocks;
   const at = blocks.findIndex((b) => b.block_type === "final_cta");
   return at === -1 ? [...blocks, extra] : [...blocks.slice(0, at), extra, ...blocks.slice(at)];
+}
+
+/** The newest published posts as a link list (REA: the homepage links to the articles). */
+function latestPosts(page: Page, pages: Page[], n: number, heading: string): PageBlock | null {
+  const hub = pages.find((p) => p.page_type === "blog_hub");
+  const posts = pages
+    .filter((p) => p.page_type === "post" && p.id !== page.id)
+    .sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""))
+    .slice(0, n);
+  if (!posts.length) return null;
+  return {
+    id: `auto-posts-${page.id}`,
+    page_id: page.id,
+    block_type: "related_links",
+    position: 0,
+    content: {
+      heading,
+      items: [...posts.map((p) => ({ label: p.nav_label ?? p.slug, href: pagePath(p) })), ...(hub ? [{ label: "All articles", href: pagePath(hub) }] : [])],
+    },
+  } as unknown as PageBlock;
 }
 
 /** Attribution for licensed photos used on this page (required by their Creative Commons licenses). */

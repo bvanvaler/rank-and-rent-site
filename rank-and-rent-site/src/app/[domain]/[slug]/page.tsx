@@ -54,7 +54,9 @@ export default async function SitePage({ params }: Props) {
     notFound();
   }
 
-  const isHub = page.page_type === "services_hub" || page.page_type === "locations_hub";
-  const childList = isHub ? (await getSitePages(site.id)).filter((p) => p.parent_page_id === page.id) : undefined;
+  const isHub = page.page_type === "services_hub" || page.page_type === "locations_hub" || page.page_type === "blog_hub";
+  let childList = isHub ? (await getSitePages(site.id)).filter((p) => p.parent_page_id === page.id) : undefined;
+  // Blog: newest posts first.
+  if (page.page_type === "blog_hub" && childList) childList = [...childList].sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""));
   return <PageView site={site} page={page} childList={childList} />;
 }
