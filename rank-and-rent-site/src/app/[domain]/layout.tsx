@@ -1,17 +1,41 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Script from "next/script";
-import { Poppins } from "next/font/google";
+import { Merriweather, Montserrat, Nunito, Nunito_Sans, Open_Sans, Oswald, Poppins, Raleway, Source_Sans_3 } from "next/font/google";
 import "../globals.css";
 import { getSiteByDomain, getSitePages, listActiveDomains, pagePath } from "@/lib/data";
 import type { Page, Site, SiteTheme } from "@/lib/types";
+import { layoutOf, type Layout } from "@/lib/layout";
 
-const displayFont = Poppins({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-display",
-  display: "swap",
-});
+/*
+ * Font pairs a site can pick (theme.layout.font). Only the pair a site uses
+ * is downloaded by the visitor's browser; nothing is preloaded that isn't used.
+ * (next/font needs each call's options written out literally, no spreads.)
+ */
+const poppins = Poppins({ subsets: ["latin"], display: "swap", preload: false, weight: ["600", "700", "800"], variable: "--f-poppins" });
+const montserrat = Montserrat({ subsets: ["latin"], display: "swap", preload: false, weight: ["600", "700", "800"], variable: "--f-montserrat" });
+const oswald = Oswald({ subsets: ["latin"], display: "swap", preload: false, weight: ["500", "600", "700"], variable: "--f-oswald" });
+const nunito = Nunito({ subsets: ["latin"], display: "swap", preload: false, weight: ["700", "800"], variable: "--f-nunito" });
+const merriweather = Merriweather({ subsets: ["latin"], display: "swap", preload: false, weight: ["700", "900"], variable: "--f-merriweather" });
+const raleway = Raleway({ subsets: ["latin"], display: "swap", preload: false, weight: ["600", "700", "800"], variable: "--f-raleway" });
+const openSans = Open_Sans({ subsets: ["latin"], display: "swap", preload: false, variable: "--f-opensans" });
+const sourceSans = Source_Sans_3({ subsets: ["latin"], display: "swap", preload: false, variable: "--f-sourcesans" });
+const nunitoSans = Nunito_Sans({ subsets: ["latin"], display: "swap", preload: false, variable: "--f-nunitosans" });
+const FONT_VARS = [poppins, montserrat, oswald, nunito, merriweather, raleway, openSans, sourceSans, nunitoSans].map((x) => x.variable).join(" ");
+
+/** Layout choices become data-* attributes on <html>; globals.css styles each variant. */
+function layoutAttrs(l: Layout): Record<string, string> {
+  return {
+    "data-header": l.header,
+    "data-hero": l.hero,
+    "data-cards": l.cards,
+    "data-card-style": l.cardStyle,
+    "data-shape": l.shape,
+    "data-font": l.font,
+    "data-heads": l.heads,
+    "data-footer": l.footer,
+  };
+}
 
 export const revalidate = 300;
 
@@ -83,9 +107,113 @@ export default async function SiteLayout({ children, params }: LayoutProps) {
   const locationPages = locationsHub ? pages.filter((p) => p.parent_page_id === locationsHub.id) : [];
   const ctaHref = estimatePage ? pagePath(estimatePage) : "/contact";
   const hasLogo = Boolean(site.theme?.logo_b64);
+  const layout = layoutOf(site.theme);
+
+  const brand = (logoHeight: number) => (
+    <Link href="/" className="brand" style={{ color: "var(--ink)" }}>
+      {hasLogo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src="/logo.webp" alt={`${site.business_name} logo`} width={70} height={80} style={{ height: logoHeight, width: "auto" }} />
+      )}
+      <span className="brand__name" style={{ color: "var(--ink)" }}>
+        {site.business_name}
+        {site.tagline && <span className="brand__tag">{site.tagline}</span>}
+      </span>
+    </Link>
+  );
+  const navLinks = (
+    <ul className="nav__links">
+      <li>
+        <Link href="/" className="nav__link">
+          Home
+        </Link>
+      </li>
+      {servicesHub && (
+        <li>
+          <Link href="/services" className="nav__link">
+            Services ▾
+          </Link>
+          {servicePages.length > 0 && (
+            <div className="nav__drop">
+              {servicePages.map((p) => (
+                <Link key={p.id} href={pagePath(p)}>
+                  {p.nav_label ?? p.slug}
+                </Link>
+              ))}
+            </div>
+          )}
+        </li>
+      )}
+      {locationsHub && (
+        <li>
+          <Link href="/locations" className="nav__link">
+            Service Areas ▾
+          </Link>
+          {locationPages.length > 0 && (
+            <div className="nav__drop nav__drop--cols">
+              {locationPages.map((p) => (
+                <Link key={p.id} href={pagePath(p)}>
+                  {p.nav_label ?? p.slug}
+                </Link>
+              ))}
+            </div>
+          )}
+        </li>
+      )}
+      {aboutPage && (
+        <li>
+          <Link href="/about" className="nav__link">
+            About
+          </Link>
+        </li>
+      )}
+      {faqPage && (
+        <li>
+          <Link href={pagePath(faqPage)} className="nav__link">
+            FAQ
+          </Link>
+        </li>
+      )}
+      {contactPage && (
+        <li>
+          <Link href="/contact" className="nav__link">
+            Contact
+          </Link>
+        </li>
+      )}
+    </ul>
+  );
+  const mobileMenu = (
+    <details className="nav__mobile">
+      <summary>☰ Menu</summary>
+      <div className="nav__mobile-panel">
+        <Link href="/">Home</Link>
+        {servicesHub && <Link href="/services">Services</Link>}
+        {servicePages.map((p) => (
+          <Link key={p.id} href={pagePath(p)} className="sub">
+            {p.nav_label ?? p.slug}
+          </Link>
+        ))}
+        {locationsHub && <Link href="/locations">Service Areas</Link>}
+        {aboutPage && <Link href="/about">About</Link>}
+        {faqPage && <Link href={pagePath(faqPage)}>FAQ</Link>}
+        {contactPage && <Link href="/contact">Contact</Link>}
+      </div>
+    </details>
+  );
+  const cta = (
+    <Link href={ctaHref} className="btn btn--accent nav__cta">
+      Get a Free Estimate →
+    </Link>
+  );
+  const phoneBtn = site.phone ? (
+    <a href={tel(site.phone)} className="btn btn--accent">
+      📞 {site.phone}
+    </a>
+  ) : null;
 
   return (
-    <html lang="en" className={displayFont.variable} style={themeVars(site.theme)}>
+    <html lang="en" className={FONT_VARS} style={themeVars(site.theme)} {...layoutAttrs(layout)}>
       <body>
         {site.ga_measurement_id && (
           <>
@@ -99,124 +227,59 @@ export default async function SiteLayout({ children, params }: LayoutProps) {
           </>
         )}
 
-        <header>
-          <div style={{ background: "#fff", borderBottom: "1px solid var(--line)" }}>
-            <div className="wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, paddingTop: 10, paddingBottom: 10 }}>
-              <Link href="/" className="brand" style={{ color: "var(--ink)" }}>
-                {hasLogo && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src="/logo.webp" alt={`${site.business_name} logo`} width={70} height={80} style={{ height: 72, width: "auto" }} />
-                )}
-                <span className="brand__name" style={{ color: "var(--ink)" }}>
-                  {site.business_name}
-                  {site.tagline && (
-                    <span style={{ display: "block", fontFamily: "system-ui, sans-serif", fontWeight: 500, fontSize: 13, color: "var(--muted)" }}>
-                      {site.tagline}
-                    </span>
-                  )}
-                </span>
-              </Link>
-              <div className="header-contact">
-                {site.city && (
-                  <span className="header-contact__item header-contact__item--hide" style={{ color: "var(--muted)" }}>
-                    📍 Based in {site.city}, {site.state}
-                  </span>
-                )}
-                {site.phone && (
-                  <a href={tel(site.phone)} className="btn btn--accent">
-                    📞 {site.phone}
-                  </a>
-                )}
+        {layout.header === "bar" ? (
+          // One white bar: logo, menu and button together.
+          <header className="site-nav site-nav--bar">
+            <div className="wrap site-nav__inner" style={{ position: "relative" }}>
+              {brand(52)}
+              {navLinks}
+              {mobileMenu}
+              {phoneBtn ?? cta}
+            </div>
+          </header>
+        ) : layout.header === "centered" ? (
+          // Logo centered on top, menu centered underneath.
+          <header>
+            <div className="header-center">
+              <div className="wrap header-center__inner">
+                {brand(64)}
+                {site.city && <span className="header-center__where">Serving {site.city}, {site.state} and nearby</span>}
+                {phoneBtn}
               </div>
             </div>
-          </div>
-
-          <nav className="site-nav" aria-label="Main">
-            <div className="wrap site-nav__inner" style={{ position: "relative" }}>
-              <ul className="nav__links">
-                <li>
-                  <Link href="/" className="nav__link">
-                    Home
-                  </Link>
-                </li>
-                {servicesHub && (
-                  <li>
-                    <Link href="/services" className="nav__link">
-                      Services ▾
-                    </Link>
-                    {servicePages.length > 0 && (
-                      <div className="nav__drop">
-                        {servicePages.map((p) => (
-                          <Link key={p.id} href={pagePath(p)}>
-                            {p.nav_label ?? p.slug}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                )}
-                {locationsHub && (
-                  <li>
-                    <Link href="/locations" className="nav__link">
-                      Service Areas ▾
-                    </Link>
-                    {locationPages.length > 0 && (
-                      <div className="nav__drop nav__drop--cols">
-                        {locationPages.map((p) => (
-                          <Link key={p.id} href={pagePath(p)}>
-                            {p.nav_label ?? p.slug}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                )}
-                {aboutPage && (
-                  <li>
-                    <Link href="/about" className="nav__link">
-                      About
-                    </Link>
-                  </li>
-                )}
-                {faqPage && (
-                  <li>
-                    <Link href={pagePath(faqPage)} className="nav__link">
-                      FAQ
-                    </Link>
-                  </li>
-                )}
-                {contactPage && (
-                  <li>
-                    <Link href="/contact" className="nav__link">
-                      Contact
-                    </Link>
-                  </li>
-                )}
-              </ul>
-
-              <details className="nav__mobile">
-                <summary>☰ Menu</summary>
-                <div className="nav__mobile-panel">
-                  <Link href="/">Home</Link>
-                  {servicesHub && <Link href="/services">Services</Link>}
-                  {servicePages.map((p) => (
-                    <Link key={p.id} href={pagePath(p)} className="sub">
-                      {p.nav_label ?? p.slug}
-                    </Link>
-                  ))}
-                  {locationsHub && <Link href="/locations">Service Areas</Link>}
-                  {aboutPage && <Link href="/about">About</Link>}
-                  {faqPage && <Link href={pagePath(faqPage)}>FAQ</Link>}
-                  {contactPage && <Link href="/contact">Contact</Link>}
+            <nav className="site-nav site-nav--center" aria-label="Main">
+              <div className="wrap site-nav__inner" style={{ position: "relative" }}>
+                {navLinks}
+                {mobileMenu}
+                {cta}
+              </div>
+            </nav>
+          </header>
+        ) : (
+          // Original: white top row (logo, location, phone) over a colored menu bar.
+          <header>
+            <div style={{ background: "#fff", borderBottom: "1px solid var(--line)" }}>
+              <div className="wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, paddingTop: 10, paddingBottom: 10 }}>
+                {brand(72)}
+                <div className="header-contact">
+                  {site.city && (
+                    <span className="header-contact__item header-contact__item--hide" style={{ color: "var(--muted)" }}>
+                      📍 Based in {site.city}, {site.state}
+                    </span>
+                  )}
+                  {phoneBtn}
                 </div>
-              </details>
-
-              <Link href={ctaHref} className="btn btn--accent nav__cta">
-                Get a Free Estimate →
-              </Link>
+              </div>
             </div>
-          </nav>
-        </header>
+            <nav className="site-nav" aria-label="Main">
+              <div className="wrap site-nav__inner" style={{ position: "relative" }}>
+                {navLinks}
+                {mobileMenu}
+                {cta}
+              </div>
+            </nav>
+          </header>
+        )}
 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessLd(site, locationPages)) }} />
         <main>{children}</main>
