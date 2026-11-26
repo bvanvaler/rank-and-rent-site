@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BlockRenderer, Photo, type BlockCtx } from "@/components/BlockRenderer";
 import { getPageBlocks, getPageImages, getSitePages, pagePath } from "@/lib/data";
-import type { HeroContent, Page, PageBlock, PageIntroContent, Site } from "@/lib/types";
+import type { HeroContent, Page, PageBlock, PageImage, PageIntroContent, Site } from "@/lib/types";
 
 /**
  * Shared page plumbing for every route (home, hubs, singletons, flat
@@ -212,7 +212,32 @@ export async function PageView({
       {serviceLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceLd) }} />}
       {out}
       {page.page_type === "contact" && <ContactDetails site={site} />}
+      <PhotoCredits images={images} />
     </>
+  );
+}
+
+/** Attribution for licensed photos used on this page (required by their Creative Commons licenses). */
+function PhotoCredits({ images }: { images: Record<string, PageImage> }) {
+  // credit / credit_url are selected in getPageImages; only licensed photos have them.
+  const credited = (Object.values(images) as (PageImage & { credit?: string | null; credit_url?: string | null })[]).filter((i) => i.credit);
+  if (credited.length === 0) return null;
+  return (
+    <div className="wrap" style={{ fontSize: 12, color: "var(--muted)", paddingTop: 18, paddingBottom: 18 }}>
+      Photo credits:{" "}
+      {credited.map((i, n) => (
+        <span key={i.id}>
+          {n > 0 && " · "}
+          {i.credit_url ? (
+            <a href={i.credit_url} rel="nofollow noopener" target="_blank" style={{ color: "inherit" }}>
+              {i.credit}
+            </a>
+          ) : (
+            i.credit
+          )}
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -85,7 +85,7 @@ export const getPageBlocks = cached("page-blocks", async (pageId: string): Promi
 export const getPageImages = cached("page-images", async (pageId: string): Promise<Record<string, PageImage>> => {
   const { data, error } = await createPublicClient()
     .from("page_images")
-    .select("id, slot_key, storage_path, alt_text")
+    .select("id, slot_key, storage_path, alt_text, credit, credit_url")
     .eq("page_id", pageId);
   if (error) throw error;
   const bySlot: Record<string, PageImage> = {};
