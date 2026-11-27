@@ -25,6 +25,9 @@ export async function submitLead(
   const phone = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
+  // Text-message consent only counts if they checked the box and gave a phone number.
+  const smsConsent = formData.get("sms_consent") === "yes" && !!phone;
+  const smsConsentText = smsConsent ? String(formData.get("sms_consent_text") ?? "").slice(0, 1000) : null;
 
   if (!name) return { ok: false, error: "Name is required." };
   if (!phone && !email) return { ok: false, error: "A phone number or email is required." };
@@ -38,6 +41,8 @@ export async function submitLead(
     email: email || null,
     message: message || null,
     source,
+    sms_consent: smsConsent,
+    sms_consent_text: smsConsentText,
   });
 
   if (error) {

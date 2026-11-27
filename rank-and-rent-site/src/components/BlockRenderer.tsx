@@ -28,6 +28,9 @@ export interface BlockCtx {
   thankYouHref?: string;
   estimateHref: string;
   siteId: string;
+  businessName: string;
+  privacyHref?: string;
+  termsHref?: string;
   phone: string | null;
   /** Show labeled "photo needed" boxes for empty photo spots (sites.theme.placeholders). */
   placeholders: boolean;
@@ -488,7 +491,7 @@ function ContactInfo({ content, ctx, pageId }: { content: ContactInfoContent; ct
       <div className="form-card">
         {content.heading && <h2 style={{ fontSize: 26, margin: "0 0 6px" }}>{content.heading}</h2>}
         {content.hours && <p style={{ color: "var(--muted)", margin: "0 0 14px" }}>{content.hours}</p>}
-        {content.form_enabled && <ContactForm siteId={ctx.siteId} pageId={pageId} redirectTo={ctx.thankYouHref} />}
+        {content.form_enabled && <ContactForm siteId={ctx.siteId} pageId={pageId} redirectTo={ctx.thankYouHref} businessName={ctx.businessName} privacyHref={ctx.privacyHref} termsHref={ctx.termsHref} />}
       </div>
       {content.map_embed_url && (
         <iframe src={content.map_embed_url} className="w-full h-64 rounded-lg border border-slate-200 mt-6" loading="lazy" />

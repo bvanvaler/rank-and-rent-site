@@ -52,7 +52,17 @@ export async function linkMaps(siteId: string) {
     if (p.page_type === "location" && p.nav_label) locationHrefByName[p.nav_label.toLowerCase()] = pagePath(p);
   }
   const thankYou = pages.find((p) => p.page_type === "thank_you");
-  return { pages, pageHrefById, locationHrefByName, thankYouHref: thankYou ? pagePath(thankYou) : undefined };
+  const legal = pages.filter((p) => p.page_type === "legal");
+  const privacy = legal.find((p) => /privacy/i.test(p.slug));
+  const terms = legal.find((p) => /terms/i.test(p.slug));
+  return {
+    pages,
+    pageHrefById,
+    locationHrefByName,
+    thankYouHref: thankYou ? pagePath(thankYou) : undefined,
+    privacyHref: privacy ? pagePath(privacy) : undefined,
+    termsHref: terms ? pagePath(terms) : undefined,
+  };
 }
 
 /** "November 28, 2026" for a post's publish date. */
@@ -159,6 +169,9 @@ export async function PageView({
     thankYouHref: maps.thankYouHref,
     estimateHref: estimate ? pagePath(estimate) : "/contact",
     siteId: site.id,
+    businessName: site.business_name,
+    privacyHref: maps.privacyHref,
+    termsHref: maps.termsHref,
     phone: site.phone,
     placeholders,
     crumbs,

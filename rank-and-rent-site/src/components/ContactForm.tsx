@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { submitLead } from "@/lib/actions";
+import { smsConsentText } from "@/lib/consent";
 
 /**
  * The real contact-form submission -- rendered by BlockRenderer's
@@ -15,13 +16,21 @@ export function ContactForm({
   pageId,
   source = "contact_page",
   redirectTo,
+  businessName,
+  privacyHref,
+  termsHref,
 }: {
   siteId: string;
   pageId: string | null;
   source?: string;
   /** Send the visitor to this page (e.g. /thank-you) after a successful submit. */
   redirectTo?: string;
+  /** Shown in the text-message consent wording. */
+  businessName: string;
+  privacyHref?: string;
+  termsHref?: string;
 }) {
+  const consentText = smsConsentText(businessName);
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -83,6 +92,18 @@ export function ContactForm({
           rows={4}
         />
       </div>
+      <label className="sms-consent" style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, lineHeight: 1.5, color: "var(--muted)", cursor: "pointer" }}>
+        <input type="checkbox" name="sms_consent" value="yes" style={{ marginTop: 3, width: 18, height: 18, flex: "0 0 auto" }} />
+        <span>
+          <strong style={{ color: "var(--ink)" }}>Text me about my request (optional).</strong> {consentText}
+          {(privacyHref || termsHref) && " See our "}
+          {privacyHref && <a href={privacyHref}>Privacy Policy</a>}
+          {privacyHref && termsHref && " and "}
+          {termsHref && <a href={termsHref}>Terms</a>}
+          {(privacyHref || termsHref) && "."}
+        </span>
+      </label>
+      <input type="hidden" name="sms_consent_text" value={consentText} />
       {result?.error && <p className="text-sm text-red-600">{result.error}</p>}
       <button
         type="submit"
